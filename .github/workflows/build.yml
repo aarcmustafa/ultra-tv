@@ -206,7 +206,7 @@ jobs:
             sed -i 's|</resources>|    <color name="sttiten_background">#0E1116</color>\n</resources>|' "$C"
           fi
           echo "color added"
-        - name: Create StreamPref
+          - name: Create StreamPref
   working-directory: source/android-native
   run: |
     PKG="app/src/main/kotlin/com/ultratv/tv/nativeapp/ext"
