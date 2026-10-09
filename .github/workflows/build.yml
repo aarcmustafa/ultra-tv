@@ -1,1 +1,56 @@
-1
+name: Build STTITEN IP TV
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Ultra TV
+        uses: actions/checkout@v4
+        with:
+          repository: khalilbenaz/ultra-tv
+          ref: main
+          path: source
+          fetch-depth: 1
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          java-package: 'jdk'
+          architecture: 'x64'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+
+      - name: Accept Android SDK Licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Install Android SDK components
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" || true
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: sttiten-v4-${{ hashFiles('source/android-native/**/*.gradle*') }}
+          restore-keys: sttiten-v4-
+
+      - name: Diagnostic - Find stream URL builder
+        working-directory: source/android-native
+        run: |
+          echo "===== ملفات Xtream/Streaming ====="
+          find . -path "*xtream*" -name "*.kt" -not -path "*/build/*" -not -path "*/test/*" 2>/dev/null
+          echo "===== الأسطر التي تحتوي .ts ====="
+          grep -rn '\.ts"' --include="*.kt" . 2>/dev/null | grep -v "*/test/*" | head -20 || true
+          echo "===== الأسطر التي تحتوي /live/ ====="
+          grep -rn '/live/' --include="*.kt" . 2>/dev/null | grep -v "*/test/*" | head -20 || true
