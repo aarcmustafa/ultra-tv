@@ -9,6 +9,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # 1. استنساخ مستودع Ultra TV
       - name: Checkout Ultra TV
         uses: actions/checkout@v4
         with:
@@ -42,88 +43,247 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: sttiten-v2-${{ hashFiles('source/android-native/**/*.gradle*') }}
-          restore-keys: sttiten-v2-
+          key: sttiten-universal-${{ hashFiles('source/android-native/**/*.gradle*') }}
+          restore-keys: sttiten-universal-
 
-      # 🔍 الخطوة الحاسمة: البحث الشامل عن Ultra TV
-      - name: Diagnostic - Find all "Ultra TV" occurrences
+      # 2. تغيير اسم التطبيق واسم المطور في جميع الملفات
+      - name: Change app name and developer
         working-directory: source/android-native
         run: |
-          echo "===== [1] في strings.xml ====="
-          grep -rn "Ultra TV\|ULTRA TV\|TV ULTRA\|UltraTV\|ultra_tv" --include="strings.xml" . 2>/dev/null | head -30
-          
-          echo ""
-          echo "===== [2] في ملفات Kotlin (نصوص حرفية) ====="
-          grep -rn '"Ultra TV"\|"ULTRA TV"\|"TV ULTRA"\|"UltraTV"\|"ultra_tv"' --include="*.kt" . 2>/dev/null | head -40
-          
-          echo ""
-          echo "===== [3] في ملفات XML الأخرى ====="
-          grep -rn "Ultra TV\|ULTRA TV\|TV ULTRA" --include="*.xml" . 2>/dev/null | grep -v strings.xml | head -20
-
-      # 🔥 استبدال شامل في كل مكان
-      - name: Replace "Ultra TV" everywhere
-        working-directory: source/android-native
-        run: |
-          echo "===== استبدال في strings.xml ====="
           find . -name "strings.xml" -not -path "*/build/*" | while read f; do
             sed -i 's|Ultra TV|STTITEN IP TV|g' "$f"
             sed -i 's|ULTRA TV|STTITEN IP TV|g' "$f"
             sed -i 's|TV ULTRA|STTITEN IP TV|g' "$f"
-            sed -i 's|UltraTV|STTITEN IP TV|g' "$f"
+            sed -i 's|<string name="app_name">[^<]*</string>|<string name="app_name">STTITEN IP TV</string>|g' "$f"
           done
           
-          echo "===== استبدال في ملفات Kotlin ====="
           find . -name "*.kt" -not -path "*/build/*" | while read f; do
             sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$f"
             sed -i 's|"ULTRA TV"|"STTITEN IP TV"|g' "$f"
             sed -i 's|"TV ULTRA"|"STTITEN IP TV"|g' "$f"
-            sed -i 's|"UltraTV"|"STTITEN IP TV"|g' "$f"
             sed -i 's|"TV Ultra"|"STTITEN IP TV"|g' "$f"
-            sed -i 's|"Ultra Tv"|"STTITEN IP TV"|g' "$f"
           done
           
-          echo "===== استبدال في ملفات XML ====="
-          find . -name "*.xml" -not -path "*/build/*" | while read f; do
-            sed -i 's|>Ultra TV<|>STTITEN IP TV<|g' "$f"
-            sed -i 's|>ULTRA TV<|>STTITEN IP TV<|g' "$f"
-            sed -i 's|>TV ULTRA<|>STTITEN IP TV<|g' "$f"
-          done
-          
-          echo "✅ تم الاستبدال الشامل"
-
-      # تغيير اسم التطبيق في strings.xml
-      - name: Change app_name
-        working-directory: source/android-native
-        run: |
-          find . -name "strings.xml" -not -path "*/build/*" | while read f; do
-            sed -i 's|<string name="app_name">[^<]*</string>|<string name="app_name">STTITEN IP TV</string>|g' "$f"
-          done
-          
-          # ملف عربي
           mkdir -p app/src/main/res/values-ar
           cat > app/src/main/res/values-ar/strings.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
               <string name="app_name">STTITEN IP TV</string>
               <string name="developer_name">جلولي مصطفى</string>
+              <string name="developer_name_latin">Djellouli Mustafa</string>
           </resources>
           EOF
+          echo "✅ تم تغيير الاسم والمطور"
 
-      # ✅ التحقق: هل بقيت أي نصوص "Ultra"؟
-      - name: Verify no Ultra TV remains
+      # 3. إضافة تبعيات QR (ZXing) و NanoHTTPD
+      - name: Add QR dependencies
         working-directory: source/android-native
         run: |
-          echo "===== البحث عن أي بقايا ====="
-          REMAINING=$(grep -rn '"Ultra TV"\|"ULTRA TV"\|"TV ULTRA"\|"UltraTV"' --include="*.kt" . 2>/dev/null | wc -l)
-          echo "عدد المراجع المتبقية في Kotlin: $REMAINING"
-          
-          grep -rn '"Ultra TV"\|"ULTRA TV"\|"TV ULTRA"' --include="*.kt" . 2>/dev/null | head -10 || echo "لا يوجد ✅"
-          
-          echo ""
-          echo "===== أمثلة على النصوص المعدلة ====="
-          grep -rn '"STTITEN IP TV"' --include="*.kt" . 2>/dev/null | head -10
+          BUILD_GRADLE="app/build.gradle.kts"
+          if [ -f "$BUILD_GRADLE" ]; then
+            if ! grep -q 'zxing' "$BUILD_GRADLE"; then
+              sed -i 's|dependencies {|dependencies {\n    implementation("com.google.zxing:core:3.5.3")\n    implementation("org.nanohttpd:nanohttpd:2.3.1")|' "$BUILD_GRADLE"
+            fi
+            echo "✅ تم إضافة ZXing و NanoHTTPD"
+          fi
 
-      # إعدادات Gradle
+      # 4. إنشاء ملفات QR (الخادم + الشاشة)
+      - name: Create QR files
+        working-directory: source/android-native
+        run: |
+          PKG_ROOT="app/src/main/java/com/ultratv/tv/nativeapp"
+          mkdir -p "$PKG_ROOT/qr"
+          
+          cat > "$PKG_ROOT/qr/QRConfigServer.kt" << 'KOTLIN_EOF'
+          package com.ultratv.tv.nativeapp.qr
+
+          import android.content.Context
+          import fi.iki.elonen.NanoHTTPD
+          import kotlinx.coroutines.flow.MutableStateFlow
+          import kotlinx.coroutines.flow.StateFlow
+
+          data class ProviderConfig(
+              val type: String,
+              val serverUrl: String = "",
+              val username: String = "",
+              val password: String = "",
+              val m3uUrl: String = ""
+          )
+
+          class QRConfigServer(context: Context, port: Int = 8765) : NanoHTTPD(port) {
+              private val _receivedConfig = MutableStateFlow<ProviderConfig?>(null)
+              val receivedConfig: StateFlow<ProviderConfig?> = _receivedConfig
+
+              override fun serve(session: IHTTPSession): Response {
+                  return when (session.uri) {
+                      "/" -> serveConfigPage()
+                      "/submit" -> handleSubmit(session)
+                      else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found")
+                  }
+              }
+
+              private fun serveConfigPage(): Response {
+                  val html = """
+                      <!DOCTYPE html>
+                      <html dir="rtl" lang="ar">
+                      <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+                      <title>STTITEN IP TV</title>
+                      <style>
+                      body{font-family:Arial;max-width:500px;margin:20px auto;padding:20px;background:#0E1116;color:#FFF}
+                      h1{color:#FF3A2F;text-align:center}
+                      label{display:block;margin-top:15px;font-weight:bold}
+                      input,select{width:100%;padding:12px;margin-top:5px;border-radius:8px;border:1px solid #333;background:#1A1D23;color:#FFF;box-sizing:border-box}
+                      button{width:100%;padding:15px;margin-top:20px;background:#FF3A2F;color:#FFF;border:none;border-radius:8px;font-size:16px;cursor:pointer}
+                      .hidden{display:none}
+                      </style></head>
+                      <body>
+                      <h1>STTITEN IP TV</h1>
+                      <form action="/submit" method="POST">
+                      <label>نوع المصدر:</label>
+                      <select name="type" onchange="toggleFields()" id="typeSelect">
+                      <option value="xtream">Xtream Codes</option>
+                      <option value="m3u">رابط M3U / M3U8</option>
+                      </select>
+                      <div id="xtreamFields">
+                      <label>عنوان السيرفر:</label><input type="text" name="serverUrl" placeholder="http://example.com:8080">
+                      <label>اسم المستخدم:</label><input type="text" name="username">
+                      <label>كلمة المرور:</label><input type="password" name="password">
+                      </div>
+                      <div id="m3uFields" class="hidden">
+                      <label>رابط M3U / M3U8:</label><input type="text" name="m3uUrl" placeholder="http://example.com/playlist.m3u8">
+                      </div>
+                      <button type="submit">إرسال إلى التلفاز</button>
+                      </form>
+                      <script>
+                      function toggleFields(){var t=document.getElementById('typeSelect').value;
+                      document.getElementById('xtreamFields').classList.toggle('hidden',t!=='xtream');
+                      document.getElementById('m3uFields').classList.toggle('hidden',t!=='m3u');}
+                      </script></body></html>
+                  """.trimIndent()
+                  return newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", html)
+              }
+
+              private fun handleSubmit(session: IHTTPSession): Response {
+                  val files = HashMap<String, String>()
+                  session.parseBody(files)
+                  val params = session.parameters
+                  val type = params["type"]?.firstOrNull() ?: ""
+                  val config = if (type == "xtream") {
+                      ProviderConfig("xtream", params["serverUrl"]?.firstOrNull() ?: "", params["username"]?.firstOrNull() ?: "", params["password"]?.firstOrNull() ?: "")
+                  } else {
+                      ProviderConfig("m3u", m3uUrl = params["m3uUrl"]?.firstOrNull() ?: "")
+                  }
+                  _receivedConfig.value = config
+                  return newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", "<h1 style='text-align:center;color:green;'>✅ تم الإرسال!</h1>")
+              }
+
+              fun getLocalIpAddress(): String {
+                  val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
+                  for (intf in interfaces) {
+                      for (addr in intf.inetAddresses) {
+                          if (!addr.isLoopbackAddress && addr is java.net.Inet4Address) return addr.hostAddress ?: "0.0.0.0"
+                      }
+                  }
+                  return "0.0.0.0"
+              }
+          }
+          KOTLIN_EOF
+
+          cat > "$PKG_ROOT/qr/QRConfigScreen.kt" << 'KOTLIN_EOF'
+          package com.ultratv.tv.nativeapp.qr
+
+          import android.graphics.Bitmap
+          import android.graphics.Color as AndroidColor
+          import androidx.compose.foundation.Image
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.material3.Text
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.graphics.asImageBitmap
+          import androidx.compose.ui.text.style.TextAlign
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
+          import com.google.zxing.BarcodeFormat
+          import com.google.zxing.EncodeHintType
+          import com.google.zxing.qrcode.QRCodeWriter
+
+          fun generateQRBitmap(text: String, size: Int = 512): Bitmap? {
+              return try {
+                  val hints = HashMap<EncodeHintType, Any>()
+                  hints[EncodeHintType.CHARACTER_SET] = "UTF-8"
+                  hints[EncodeHintType.MARGIN] = 1
+                  val matrix = QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, size, size, hints)
+                  val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+                  for (x in 0 until size) {
+                      for (y in 0 until size) {
+                          bmp.setPixel(x, y, if (matrix.get(x, y)) AndroidColor.BLACK else AndroidColor.WHITE)
+                      }
+                  }
+                  bmp
+              } catch (e: Exception) { null }
+          }
+
+          @Composable
+          fun QRConfigScreen(
+              server: QRConfigServer,
+              onConfigReceived: (ProviderConfig) -> Unit
+          ) {
+              val ipAddress by remember { mutableStateOf(server.getLocalIpAddress()) }
+              val url = "http://$ipAddress:8765"
+              val config by server.receivedConfig.collectAsState()
+
+              LaunchedEffect(config) {
+                  config?.let {
+                      onConfigReceived(it)
+                      server.receivedConfig.value = null
+                  }
+              }
+
+              val qrBitmap = remember(url) { generateQRBitmap(url) }
+
+              Column(
+                  modifier = Modifier.fillMaxSize().padding(32.dp),
+                  horizontalAlignment = Alignment.CenterHorizontally,
+                  verticalArrangement = Arrangement.Center
+              ) {
+                  Text("STTITEN IP TV", color = Color(0xFFFF3A2F), fontSize = 32.sp)
+                  Spacer(Modifier.height(16.dp))
+                  Text("امسح رمز QR بهاتفك لإضافة مصدر", fontSize = 20.sp, textAlign = TextAlign.Center)
+                  Spacer(Modifier.height(24.dp))
+                  qrBitmap?.let {
+                      Image(bitmap = it.asImageBitmap(), contentDescription = "QR Code", modifier = Modifier.size(300.dp))
+                  }
+                  Spacer(Modifier.height(16.dp))
+                  Text(url, fontSize = 16.sp, color = Color.Gray)
+              }
+          }
+          KOTLIN_EOF
+          echo "✅ تم إنشاء ملفات QR"
+
+      # 5. إعداد دمج المعماريتين (arm64 + armv7) في APK واحد
+      - name: Configure universal APK (arm64 + armv7)
+        working-directory: source/android-native
+        run: |
+          APP_GRADLE="app/build.gradle.kts"
+          if [ -f "$APP_GRADLE" ]; then
+            # نضيف abiFilters داخل defaultConfig لدمج المعماريتين
+            if ! grep -q 'abiFilters' "$APP_GRADLE"; then
+              perl -i -pe 's/(defaultConfig\s*\{)/$1\n        ndk {\n            abiFilters += listOf("arm64-v8a", "armeabi-v7a")\n        }/' "$APP_GRADLE"
+            fi
+            
+            # نضيف packaging لتقليل الحجم (ضغط المكتبات)
+            if ! grep -q 'useLegacyPackaging' "$APP_GRADLE"; then
+              perl -i -pe 's/(android\s*\{)/$1\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' "$APP_GRADLE"
+            fi
+            
+            echo "===== build.gradle.kts بعد التعديل ====="
+            grep -n -A 5 "abiFilters" "$APP_GRADLE" | head -10
+            grep -n -A 5 "useLegacyPackaging" "$APP_GRADLE" | head -10
+          fi
+
+      # 6. إعدادات Gradle
       - name: Setup Gradle properties
         working-directory: source/android-native
         run: |
@@ -138,13 +298,25 @@ jobs:
         working-directory: source/android-native
         run: chmod +x gradlew
 
-      - name: Build APK
+      # 7. البناء
+      - name: Build APK (arm64 + armv7)
         working-directory: source/android-native
         run: ./gradlew assembleDebug --stacktrace --no-daemon --no-parallel
+
+      - name: Show APK info
+        working-directory: source/android-native
+        run: |
+          echo "===== حجم APK ====="
+          find . -name "*.apk" -exec ls -lh {} \;
+          echo ""
+          echo "===== المعماريات المضمنة ====="
+          for apk in $(find . -name "*.apk" | head -1); do
+            unzip -l "$apk" | grep "\.so$" | awk '{print $4}' | grep -oE "lib/[^/]+" | sort -u
+          done
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: STTITEN-IP-TV-APK
+          name: STTITEN-IP-TV-arm64-armv7
           path: 'source/android-native/**/*.apk'
           if-no-files-found: error
