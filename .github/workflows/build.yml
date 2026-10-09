@@ -45,29 +45,28 @@ jobs:
           key: sttiten-${{ hashFiles('source/android-native/**/*.gradle*') }}
           restore-keys: sttiten-
 
-      # 🔍 تشخيص: عرض ملفات XML للأيقونات
-      - name: Diagnostic - Show XML logo files
-        working-directory: source/android-native
-        run: |
-          echo "===== ملفات XML في drawable و mipmap ====="
-          find app/src/main/res -name "*.xml" \( -path "*/drawable/*" -o -path "*/mipmap*/*" \) | head -40
-          
-          echo ""
-          echo "===== ملفات PNG (لن نلمسها) ====="
-          find app/src/main/res -name "*.png" \( -path "*/drawable/*" -o -path "*/mipmap*/*" \) | head -20
-
-      # 1. تغيير اسم التطبيق والمطور
+      # 1. تغيير اسم التطبيق والمطور (مع default values)
       - name: Change app name and developer
         working-directory: source/android-native
         run: |
+          # نضيف developer_name في كل ملفات strings.xml (بما فيها الافتراضية)
           find . -name "strings.xml" -not -path "*/build/*" | while read f; do
             echo "--- $f ---"
             sed -i 's|<string name="app_name">[^<]*</string>|<string name="app_name">STTITEN IP TV</string>|g' "$f"
-            if grep -q 'name="developer_name"' "$f"; then
+            
+            # إذا لم يكن موجوداً، نضيفه
+            if ! grep -q 'name="developer_name"' "$f"; then
+              sed -i 's|</resources>|    <string name="developer_name">جلولي مصطفى</string>\n    <string name="developer_name_latin">Djellouli Mustafa</string>\n</resources>|' "$f"
+            else
               sed -i 's|<string name="developer_name">[^<]*</string>|<string name="developer_name">جلولي مصطفى</string>|g' "$f"
+            fi
+            
+            if ! grep -q 'name="developer_name_latin"' "$f"; then
+              sed -i 's|</resources>|    <string name="developer_name_latin">Djellouli Mustafa</string>\n</resources>|' "$f"
             fi
           done
           
+          # ملف عربي مخصص
           mkdir -p app/src/main/res/values-ar
           cat > app/src/main/res/values-ar/strings.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -79,15 +78,11 @@ jobs:
           EOF
           echo "✅ تم تغيير الاسم والمطور"
 
-      # 2. تعديل ملفات XML فقط (بدون PNG)
-      - name: Replace text in XML vector files only
+      # 2. استبدال النص في ملفات XML
+      - name: Replace text in XML files
         working-directory: source/android-native
         run: |
-          echo "===== استبدال النص داخل ملفات XML Vector ====="
-          
-          # البحث في ملفات XML في drawable و layout
           find app/src/main/res -type f -name "*.xml" \( -path "*/drawable/*" -o -path "*/layout/*" \) | while read f; do
-            # هل يحتوي على نص "Ultra"؟
             if grep -qiE '>Ultra TV<|>UltraTV<|>Ultra<|"Ultra TV"|"UltraTV"' "$f" 2>/dev/null; then
               echo "--- تعديل: $f ---"
               sed -i 's|>Ultra TV<|>STTITEN IP TV<|g' "$f"
@@ -98,27 +93,24 @@ jobs:
             fi
           done
           
-          # أيضاً في ملفات Kotlin (النصوص الحرفية)
           find app/src/main/java -name "*.kt" | while read f; do
             if grep -qE '"Ultra TV"|"UltraTV"' "$f" 2>/dev/null; then
-              echo "--- تعديل Kotlin: $f ---"
               sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$f"
               sed -i 's|"UltraTV"|"STTITEN IP TV"|g' "$f"
             fi
           done
-          
-          echo "✅ تم البحث والاستبدال"
+          echo "✅ تم"
 
-      # 3. إضافة تبعيات QR
-      - name: Add QR Code dependencies
+      # 3. إضافة تبعيات QR باستخدام ZXing (Java خالص)
+      - name: Add QR Code dependencies (ZXing)
         working-directory: source/android-native
         run: |
           BUILD_GRADLE="app/build.gradle.kts"
           if [ -f "$BUILD_GRADLE" ]; then
-            if ! grep -q 'qrose' "$BUILD_GRADLE"; then
-              sed -i 's|dependencies {|dependencies {\n    implementation("io.github.alexzhirkevich:qrose:1.1.2")\n    implementation("org.nanohttpd:nanohttpd:2.3.1")|' "$BUILD_GRADLE"
+            if ! grep -q 'zxing' "$BUILD_GRADLE"; then
+              sed -i 's|dependencies {|dependencies {\n    implementation("com.google.zxing:core:3.5.3")\n    implementation("org.nanohttpd:nanohttpd:2.3.1")|' "$BUILD_GRADLE"
             fi
-            echo "✅ تم إضافة تبعيات QR"
+            echo "✅ تم إضافة ZXing و NanoHTTPD"
           fi
 
       # 4. إنشاء ملفات QR
@@ -128,6 +120,7 @@ jobs:
           PKG_ROOT="app/src/main/java/com/ultratv/tv/nativeapp"
           mkdir -p "$PKG_ROOT/qr"
           
+          # خادم HTTP
           cat > "$PKG_ROOT/qr/QRConfigServer.kt" << 'KOTLIN_EOF'
           package com.ultratv.tv.nativeapp.qr
 
@@ -223,9 +216,12 @@ jobs:
           }
           KOTLIN_EOF
 
+          # شاشة QR باستخدام ZXing + Canvas (بدون مكتبة Compose خارجية)
           cat > "$PKG_ROOT/qr/QRConfigScreen.kt" << 'KOTLIN_EOF'
           package com.ultratv.tv.nativeapp.qr
 
+          import android.graphics.Bitmap
+          import android.graphics.Color as AndroidColor
           import androidx.compose.foundation.Image
           import androidx.compose.foundation.layout.*
           import androidx.compose.material3.Text
@@ -233,10 +229,31 @@ jobs:
           import androidx.compose.ui.Alignment
           import androidx.compose.ui.Modifier
           import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.graphics.asImageBitmap
           import androidx.compose.ui.text.style.TextAlign
           import androidx.compose.ui.unit.dp
           import androidx.compose.ui.unit.sp
-          import io.github.alexzhirkevich.qrose.rememberQrCodePainter
+          import com.google.zxing.BarcodeFormat
+          import com.google.zxing.EncodeHintType
+          import com.google.zxing.qrcode.QRCodeWriter
+
+          fun generateQRBitmap(text: String, size: Int = 512): Bitmap? {
+              return try {
+                  val hints = HashMap<EncodeHintType, Any>()
+                  hints[EncodeHintType.CHARACTER_SET] = "UTF-8"
+                  hints[EncodeHintType.MARGIN] = 1
+                  val matrix = QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, size, size, hints)
+                  val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+                  for (x in 0 until size) {
+                      for (y in 0 until size) {
+                          bmp.setPixel(x, y, if (matrix.get(x, y)) AndroidColor.BLACK else AndroidColor.WHITE)
+                      }
+                  }
+                  bmp
+              } catch (e: Exception) {
+                  null
+              }
+          }
 
           @Composable
           fun QRConfigScreen(
@@ -254,6 +271,8 @@ jobs:
                   }
               }
 
+              val qrBitmap = remember(url) { generateQRBitmap(url) }
+
               Column(
                   modifier = Modifier.fillMaxSize().padding(32.dp),
                   horizontalAlignment = Alignment.CenterHorizontally,
@@ -263,14 +282,19 @@ jobs:
                   Spacer(Modifier.height(16.dp))
                   Text("امسح رمز QR بهاتفك لإضافة مصدر", fontSize = 20.sp, textAlign = TextAlign.Center)
                   Spacer(Modifier.height(24.dp))
-                  val painter = rememberQrCodePainter(url)
-                  Image(painter = painter, contentDescription = "QR Code", modifier = Modifier.size(300.dp))
+                  qrBitmap?.let {
+                      Image(
+                          bitmap = it.asImageBitmap(),
+                          contentDescription = "QR Code",
+                          modifier = Modifier.size(300.dp)
+                      )
+                  }
                   Spacer(Modifier.height(16.dp))
                   Text(url, fontSize = 16.sp, color = Color.Gray)
               }
           }
           KOTLIN_EOF
-          echo "✅ تم إنشاء ملفات QR"
+          echo "✅ تم إنشاء ملفات QR باستخدام ZXing"
 
       # 5. إعدادات Gradle
       - name: Setup Gradle properties
