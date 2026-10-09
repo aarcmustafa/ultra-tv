@@ -438,4 +438,36 @@ jobs:
         run: |
           echo "org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8" >> gradle.properties
           echo "org.gradle.daemon=false" >> gradle.properties
+          - name: "Grant execute permission"
+  working-directory: source/android-native
+  run: chmod +x gradlew
+
+# ============================================================
+# 10. البناء
+# ============================================================
+- name: "Build APK"
+  working-directory: source/android-native
+  run: ./gradlew assembleDebug --stacktrace --no-daemon --no-parallel
+
+# ============================================================
+# 11. التحقق النهائي
+# ============================================================
+- name: "Show APK info"
+  working-directory: source/android-native
+  run: |
+    echo "===== حجم APK ====="
+    find . -name "*.apk" -exec ls -lh {} \;
+    
+    echo ""
+    echo "===== الملفات الجديدة في APK ====="
+    for apk in $(find . -name "*.apk" | head -1); do
+      unzip -l "$apk" | grep -iE "qr|classes" | head -10
+    done
+
+- name: "Upload APK"
+  uses: actions/upload-artifact@v4
+  with:
+    name: STTITEN-IP-TV-Final
+    path: 'source/android-native/**/*.apk'
+    if-no-files-found: error
        
