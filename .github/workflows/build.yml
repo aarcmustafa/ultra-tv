@@ -42,26 +42,64 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: sttiten-${{ hashFiles('source/android-native/**/*.gradle*') }}
-          restore-keys: sttiten-
+          key: sttiten-v2-${{ hashFiles('source/android-native/**/*.gradle*') }}
+          restore-keys: sttiten-v2-
 
-      # تغيير اسم التطبيق واسم المطور
-      - name: Change app name and developer
+      # 🔍 الخطوة الحاسمة: البحث الشامل عن Ultra TV
+      - name: Diagnostic - Find all "Ultra TV" occurrences
+        working-directory: source/android-native
+        run: |
+          echo "===== [1] في strings.xml ====="
+          grep -rn "Ultra TV\|ULTRA TV\|TV ULTRA\|UltraTV\|ultra_tv" --include="strings.xml" . 2>/dev/null | head -30
+          
+          echo ""
+          echo "===== [2] في ملفات Kotlin (نصوص حرفية) ====="
+          grep -rn '"Ultra TV"\|"ULTRA TV"\|"TV ULTRA"\|"UltraTV"\|"ultra_tv"' --include="*.kt" . 2>/dev/null | head -40
+          
+          echo ""
+          echo "===== [3] في ملفات XML الأخرى ====="
+          grep -rn "Ultra TV\|ULTRA TV\|TV ULTRA" --include="*.xml" . 2>/dev/null | grep -v strings.xml | head -20
+
+      # 🔥 استبدال شامل في كل مكان
+      - name: Replace "Ultra TV" everywhere
+        working-directory: source/android-native
+        run: |
+          echo "===== استبدال في strings.xml ====="
+          find . -name "strings.xml" -not -path "*/build/*" | while read f; do
+            sed -i 's|Ultra TV|STTITEN IP TV|g' "$f"
+            sed -i 's|ULTRA TV|STTITEN IP TV|g' "$f"
+            sed -i 's|TV ULTRA|STTITEN IP TV|g' "$f"
+            sed -i 's|UltraTV|STTITEN IP TV|g' "$f"
+          done
+          
+          echo "===== استبدال في ملفات Kotlin ====="
+          find . -name "*.kt" -not -path "*/build/*" | while read f; do
+            sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$f"
+            sed -i 's|"ULTRA TV"|"STTITEN IP TV"|g' "$f"
+            sed -i 's|"TV ULTRA"|"STTITEN IP TV"|g' "$f"
+            sed -i 's|"UltraTV"|"STTITEN IP TV"|g' "$f"
+            sed -i 's|"TV Ultra"|"STTITEN IP TV"|g' "$f"
+            sed -i 's|"Ultra Tv"|"STTITEN IP TV"|g' "$f"
+          done
+          
+          echo "===== استبدال في ملفات XML ====="
+          find . -name "*.xml" -not -path "*/build/*" | while read f; do
+            sed -i 's|>Ultra TV<|>STTITEN IP TV<|g' "$f"
+            sed -i 's|>ULTRA TV<|>STTITEN IP TV<|g' "$f"
+            sed -i 's|>TV ULTRA<|>STTITEN IP TV<|g' "$f"
+          done
+          
+          echo "✅ تم الاستبدال الشامل"
+
+      # تغيير اسم التطبيق في strings.xml
+      - name: Change app_name
         working-directory: source/android-native
         run: |
           find . -name "strings.xml" -not -path "*/build/*" | while read f; do
             sed -i 's|<string name="app_name">[^<]*</string>|<string name="app_name">STTITEN IP TV</string>|g' "$f"
           done
           
-          # نضيف developer_name في الملف الافتراضي (values/strings.xml) فقط
-          MAIN_STRINGS=$(find app/src/main/res/values -name "strings.xml" | head -1)
-          if [ -n "$MAIN_STRINGS" ]; then
-            if ! grep -q 'name="developer_name"' "$MAIN_STRINGS"; then
-              sed -i 's|</resources>|    <string name="developer_name">Djellouli Mustafa</string>\n</resources>|' "$MAIN_STRINGS"
-            fi
-          fi
-          
-          # ملف عربي مخصص
+          # ملف عربي
           mkdir -p app/src/main/res/values-ar
           cat > app/src/main/res/values-ar/strings.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -70,8 +108,22 @@ jobs:
               <string name="developer_name">جلولي مصطفى</string>
           </resources>
           EOF
-          echo "✅ تم تغيير الاسم والمطور"
 
+      # ✅ التحقق: هل بقيت أي نصوص "Ultra"؟
+      - name: Verify no Ultra TV remains
+        working-directory: source/android-native
+        run: |
+          echo "===== البحث عن أي بقايا ====="
+          REMAINING=$(grep -rn '"Ultra TV"\|"ULTRA TV"\|"TV ULTRA"\|"UltraTV"' --include="*.kt" . 2>/dev/null | wc -l)
+          echo "عدد المراجع المتبقية في Kotlin: $REMAINING"
+          
+          grep -rn '"Ultra TV"\|"ULTRA TV"\|"TV ULTRA"' --include="*.kt" . 2>/dev/null | head -10 || echo "لا يوجد ✅"
+          
+          echo ""
+          echo "===== أمثلة على النصوص المعدلة ====="
+          grep -rn '"STTITEN IP TV"' --include="*.kt" . 2>/dev/null | head -10
+
+      # إعدادات Gradle
       - name: Setup Gradle properties
         working-directory: source/android-native
         run: |
