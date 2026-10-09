@@ -45,26 +45,21 @@ jobs:
           key: sttiten-${{ hashFiles('source/android-native/**/*.gradle*') }}
           restore-keys: sttiten-
 
-      # 1. تغيير اسم التطبيق والمطور (مع default values)
+      # تغيير اسم التطبيق واسم المطور
       - name: Change app name and developer
         working-directory: source/android-native
         run: |
-          # نضيف developer_name في كل ملفات strings.xml (بما فيها الافتراضية)
           find . -name "strings.xml" -not -path "*/build/*" | while read f; do
-            echo "--- $f ---"
             sed -i 's|<string name="app_name">[^<]*</string>|<string name="app_name">STTITEN IP TV</string>|g' "$f"
-            
-            # إذا لم يكن موجوداً، نضيفه
-            if ! grep -q 'name="developer_name"' "$f"; then
-              sed -i 's|</resources>|    <string name="developer_name">جلولي مصطفى</string>\n    <string name="developer_name_latin">Djellouli Mustafa</string>\n</resources>|' "$f"
-            else
-              sed -i 's|<string name="developer_name">[^<]*</string>|<string name="developer_name">جلولي مصطفى</string>|g' "$f"
-            fi
-            
-            if ! grep -q 'name="developer_name_latin"' "$f"; then
-              sed -i 's|</resources>|    <string name="developer_name_latin">Djellouli Mustafa</string>\n</resources>|' "$f"
-            fi
           done
+          
+          # نضيف developer_name في الملف الافتراضي (values/strings.xml) فقط
+          MAIN_STRINGS=$(find app/src/main/res/values -name "strings.xml" | head -1)
+          if [ -n "$MAIN_STRINGS" ]; then
+            if ! grep -q 'name="developer_name"' "$MAIN_STRINGS"; then
+              sed -i 's|</resources>|    <string name="developer_name">Djellouli Mustafa</string>\n</resources>|' "$MAIN_STRINGS"
+            fi
+          fi
           
           # ملف عربي مخصص
           mkdir -p app/src/main/res/values-ar
@@ -73,230 +68,10 @@ jobs:
           <resources>
               <string name="app_name">STTITEN IP TV</string>
               <string name="developer_name">جلولي مصطفى</string>
-              <string name="developer_name_latin">Djellouli Mustafa</string>
           </resources>
           EOF
           echo "✅ تم تغيير الاسم والمطور"
 
-      # 2. استبدال النص في ملفات XML
-      - name: Replace text in XML files
-        working-directory: source/android-native
-        run: |
-          find app/src/main/res -type f -name "*.xml" \( -path "*/drawable/*" -o -path "*/layout/*" \) | while read f; do
-            if grep -qiE '>Ultra TV<|>UltraTV<|>Ultra<|"Ultra TV"|"UltraTV"' "$f" 2>/dev/null; then
-              echo "--- تعديل: $f ---"
-              sed -i 's|>Ultra TV<|>STTITEN IP TV<|g' "$f"
-              sed -i 's|>UltraTV<|>STTITEN IP TV<|g' "$f"
-              sed -i 's|>Ultra<|>STTITEN IP TV<|g' "$f"
-              sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$f"
-              sed -i 's|"UltraTV"|"STTITEN IP TV"|g' "$f"
-            fi
-          done
-          
-          find app/src/main/java -name "*.kt" | while read f; do
-            if grep -qE '"Ultra TV"|"UltraTV"' "$f" 2>/dev/null; then
-              sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$f"
-              sed -i 's|"UltraTV"|"STTITEN IP TV"|g' "$f"
-            fi
-          done
-          echo "✅ تم"
-
-      # 3. إضافة تبعيات QR باستخدام ZXing (Java خالص)
-      - name: Add QR Code dependencies (ZXing)
-        working-directory: source/android-native
-        run: |
-          BUILD_GRADLE="app/build.gradle.kts"
-          if [ -f "$BUILD_GRADLE" ]; then
-            if ! grep -q 'zxing' "$BUILD_GRADLE"; then
-              sed -i 's|dependencies {|dependencies {\n    implementation("com.google.zxing:core:3.5.3")\n    implementation("org.nanohttpd:nanohttpd:2.3.1")|' "$BUILD_GRADLE"
-            fi
-            echo "✅ تم إضافة ZXing و NanoHTTPD"
-          fi
-
-      # 4. إنشاء ملفات QR
-      - name: Create QR files
-        working-directory: source/android-native
-        run: |
-          PKG_ROOT="app/src/main/java/com/ultratv/tv/nativeapp"
-          mkdir -p "$PKG_ROOT/qr"
-          
-          # خادم HTTP
-          cat > "$PKG_ROOT/qr/QRConfigServer.kt" << 'KOTLIN_EOF'
-          package com.ultratv.tv.nativeapp.qr
-
-          import android.content.Context
-          import fi.iki.elonen.NanoHTTPD
-          import kotlinx.coroutines.flow.MutableStateFlow
-          import kotlinx.coroutines.flow.StateFlow
-
-          data class ProviderConfig(
-              val type: String,
-              val serverUrl: String = "",
-              val username: String = "",
-              val password: String = "",
-              val m3uUrl: String = ""
-          )
-
-          class QRConfigServer(context: Context, port: Int = 8765) : NanoHTTPD(port) {
-              private val _receivedConfig = MutableStateFlow<ProviderConfig?>(null)
-              val receivedConfig: StateFlow<ProviderConfig?> = _receivedConfig
-
-              override fun serve(session: IHTTPSession): Response {
-                  return when (session.uri) {
-                      "/" -> serveConfigPage()
-                      "/submit" -> handleSubmit(session)
-                      else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found")
-                  }
-              }
-
-              private fun serveConfigPage(): Response {
-                  val html = """
-                      <!DOCTYPE html>
-                      <html dir="rtl" lang="ar">
-                      <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-                      <title>STTITEN IP TV</title>
-                      <style>
-                      body{font-family:Arial;max-width:500px;margin:20px auto;padding:20px;background:#0E1116;color:#FFF}
-                      h1{color:#FF3A2F;text-align:center}
-                      label{display:block;margin-top:15px;font-weight:bold}
-                      input,select{width:100%;padding:12px;margin-top:5px;border-radius:8px;border:1px solid #333;background:#1A1D23;color:#FFF;box-sizing:border-box}
-                      button{width:100%;padding:15px;margin-top:20px;background:#FF3A2F;color:#FFF;border:none;border-radius:8px;font-size:16px;cursor:pointer}
-                      .hidden{display:none}
-                      </style></head>
-                      <body>
-                      <h1>STTITEN IP TV</h1>
-                      <form action="/submit" method="POST">
-                      <label>نوع المصدر:</label>
-                      <select name="type" onchange="toggleFields()" id="typeSelect">
-                      <option value="xtream">Xtream Codes</option>
-                      <option value="m3u">رابط M3U</option>
-                      </select>
-                      <div id="xtreamFields">
-                      <label>عنوان السيرفر:</label><input type="text" name="serverUrl" placeholder="http://example.com:8080">
-                      <label>اسم المستخدم:</label><input type="text" name="username">
-                      <label>كلمة المرور:</label><input type="password" name="password">
-                      </div>
-                      <div id="m3uFields" class="hidden">
-                      <label>رابط M3U:</label><input type="text" name="m3uUrl">
-                      </div>
-                      <button type="submit">إرسال</button>
-                      </form>
-                      <script>
-                      function toggleFields(){var t=document.getElementById('typeSelect').value;
-                      document.getElementById('xtreamFields').classList.toggle('hidden',t!=='xtream');
-                      document.getElementById('m3uFields').classList.toggle('hidden',t!=='m3u');}
-                      </script></body></html>
-                  """.trimIndent()
-                  return newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", html)
-              }
-
-              private fun handleSubmit(session: IHTTPSession): Response {
-                  val files = HashMap<String, String>()
-                  session.parseBody(files)
-                  val params = session.parameters
-                  val type = params["type"]?.firstOrNull() ?: ""
-                  val config = if (type == "xtream") {
-                      ProviderConfig("xtream", params["serverUrl"]?.firstOrNull() ?: "", params["username"]?.firstOrNull() ?: "", params["password"]?.firstOrNull() ?: "")
-                  } else {
-                      ProviderConfig("m3u", m3uUrl = params["m3uUrl"]?.firstOrNull() ?: "")
-                  }
-                  _receivedConfig.value = config
-                  return newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", "<h1 style='text-align:center;color:green;'>✅ تم!</h1>")
-              }
-
-              fun getLocalIpAddress(): String {
-                  val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
-                  for (intf in interfaces) {
-                      for (addr in intf.inetAddresses) {
-                          if (!addr.isLoopbackAddress && addr is java.net.Inet4Address) return addr.hostAddress ?: "0.0.0.0"
-                      }
-                  }
-                  return "0.0.0.0"
-              }
-          }
-          KOTLIN_EOF
-
-          # شاشة QR باستخدام ZXing + Canvas (بدون مكتبة Compose خارجية)
-          cat > "$PKG_ROOT/qr/QRConfigScreen.kt" << 'KOTLIN_EOF'
-          package com.ultratv.tv.nativeapp.qr
-
-          import android.graphics.Bitmap
-          import android.graphics.Color as AndroidColor
-          import androidx.compose.foundation.Image
-          import androidx.compose.foundation.layout.*
-          import androidx.compose.material3.Text
-          import androidx.compose.runtime.*
-          import androidx.compose.ui.Alignment
-          import androidx.compose.ui.Modifier
-          import androidx.compose.ui.graphics.Color
-          import androidx.compose.ui.graphics.asImageBitmap
-          import androidx.compose.ui.text.style.TextAlign
-          import androidx.compose.ui.unit.dp
-          import androidx.compose.ui.unit.sp
-          import com.google.zxing.BarcodeFormat
-          import com.google.zxing.EncodeHintType
-          import com.google.zxing.qrcode.QRCodeWriter
-
-          fun generateQRBitmap(text: String, size: Int = 512): Bitmap? {
-              return try {
-                  val hints = HashMap<EncodeHintType, Any>()
-                  hints[EncodeHintType.CHARACTER_SET] = "UTF-8"
-                  hints[EncodeHintType.MARGIN] = 1
-                  val matrix = QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, size, size, hints)
-                  val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-                  for (x in 0 until size) {
-                      for (y in 0 until size) {
-                          bmp.setPixel(x, y, if (matrix.get(x, y)) AndroidColor.BLACK else AndroidColor.WHITE)
-                      }
-                  }
-                  bmp
-              } catch (e: Exception) {
-                  null
-              }
-          }
-
-          @Composable
-          fun QRConfigScreen(
-              server: QRConfigServer,
-              onConfigReceived: (ProviderConfig) -> Unit
-          ) {
-              val ipAddress by remember { mutableStateOf(server.getLocalIpAddress()) }
-              val url = "http://$ipAddress:8765"
-              val config by server.receivedConfig.collectAsState()
-
-              LaunchedEffect(config) {
-                  config?.let {
-                      onConfigReceived(it)
-                      server.receivedConfig.value = null
-                  }
-              }
-
-              val qrBitmap = remember(url) { generateQRBitmap(url) }
-
-              Column(
-                  modifier = Modifier.fillMaxSize().padding(32.dp),
-                  horizontalAlignment = Alignment.CenterHorizontally,
-                  verticalArrangement = Arrangement.Center
-              ) {
-                  Text("STTITEN IP TV", color = Color(0xFFFF3A2F), fontSize = 32.sp)
-                  Spacer(Modifier.height(16.dp))
-                  Text("امسح رمز QR بهاتفك لإضافة مصدر", fontSize = 20.sp, textAlign = TextAlign.Center)
-                  Spacer(Modifier.height(24.dp))
-                  qrBitmap?.let {
-                      Image(
-                          bitmap = it.asImageBitmap(),
-                          contentDescription = "QR Code",
-                          modifier = Modifier.size(300.dp)
-                      )
-                  }
-                  Spacer(Modifier.height(16.dp))
-                  Text(url, fontSize = 16.sp, color = Color.Gray)
-              }
-          }
-          KOTLIN_EOF
-          echo "✅ تم إنشاء ملفات QR باستخدام ZXing"
-
-      # 5. إعدادات Gradle
       - name: Setup Gradle properties
         working-directory: source/android-native
         run: |
@@ -307,18 +82,13 @@ jobs:
           echo "android.useAndroidX=true" >> gradle.properties
           echo "kotlin.code.style=official" >> gradle.properties
 
-      - name: Grant execute permission for gradlew
+      - name: Grant execute permission
         working-directory: source/android-native
         run: chmod +x gradlew
 
-      # 6. البناء
       - name: Build APK
         working-directory: source/android-native
         run: ./gradlew assembleDebug --stacktrace --no-daemon --no-parallel
-
-      - name: List APKs
-        working-directory: source/android-native
-        run: find . -name "*.apk" -type f -exec ls -lh {} \;
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
