@@ -17,30 +17,11 @@ jobs:
           path: source
           fetch-depth: 1
 
-      # 🔍 تشخيص: أين يوجد مشروع Gradle؟
-      - name: Diagnostic - Find Gradle project
-        working-directory: source
-        run: |
-          echo "===== محتويات الجذر ====="
-          ls -la
-          echo ""
-          echo "===== البحث عن settings.gradle ====="
-          find . -maxdepth 4 -name "settings.gradle*" -not -path "*/build/*" 2>/dev/null
-          echo ""
-          echo "===== البحث عن build.gradle في android-app ====="
-          find android-app -maxdepth 3 -name "build.gradle*" -not -path "*/build/*" 2>/dev/null | head -20
-          echo ""
-          echo "===== البحث عن build.gradle في android-native ====="
-          find android-native -maxdepth 3 -name "build.gradle*" -not -path "*/build/*" 2>/dev/null | head -20
-          echo ""
-          echo "===== ملفات XML في android-app/android-native ====="
-          find android-app android-native -name "*.xml" \( -path "*/drawable/*" -o -path "*/mipmap*/*" \) 2>/dev/null | head -40
-
-      - name: Set up JDK 21
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '21'
+          java-version: '17'
           java-package: 'jdk'
           architecture: 'x64'
 
@@ -55,76 +36,40 @@ jobs:
       - name: Install Android SDK components
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0" || true
 
-      - name: Install ImageMagick
-        run: sudo apt-get update -qq && sudo apt-get install -y imagemagick fonts-dejavu
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.11.1'
-
       - name: Cache Gradle
         uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: sttiten-${{ hashFiles('source/**/*.gradle*', 'source/**/gradle-wrapper.properties') }}
+          key: sttiten-${{ hashFiles('source/android-native/**/*.gradle*') }}
           restore-keys: sttiten-
 
-      # 🔧 تحديد مجلد المشروع وإنشاء gradlew
-      - name: Locate project and create gradlew
-        id: project
-        working-directory: source
+      # 🔍 تشخيص: عرض ملفات XML للأيقونات
+      - name: Diagnostic - Show XML logo files
+        working-directory: source/android-native
         run: |
-          # نبحث عن settings.gradle في أي مكان
-          SETTINGS=$(find . -maxdepth 4 -name "settings.gradle*" -not -path "*/build/*" | head -1)
-          
-          if [ -z "$SETTINGS" ]; then
-            echo "❌ لم يتم العثور على settings.gradle"
-            find . -maxdepth 2 -type d
-            exit 1
-          fi
-          
-          PROJECT_DIR=$(dirname "$SETTINGS")
-          echo "✅ مجلد المشروع: $PROJECT_DIR"
-          echo "dir=$PROJECT_DIR" >> $GITHUB_OUTPUT
-          
-          cd "$PROJECT_DIR"
-          
-          # التحقق من وجود gradlew
-          if [ ! -f "gradlew" ]; then
-            echo "⚠️ gradlew غير موجود، سيتم إنشاؤه..."
-            gradle wrapper --gradle-version 8.11.1 || gradle wrapper
-          fi
-          
-          chmod +x gradlew
-          ls -la gradlew
+          echo "===== ملفات XML في drawable و mipmap ====="
+          find app/src/main/res -name "*.xml" \( -path "*/drawable/*" -o -path "*/mipmap*/*" \) | head -40
           
           echo ""
-          echo "===== محتويات مجلد المشروع ====="
-          ls -la
+          echo "===== ملفات PNG (لن نلمسها) ====="
+          find app/src/main/res -name "*.png" \( -path "*/drawable/*" -o -path "*/mipmap*/*" \) | head -20
 
-      # 2. تغيير اسم التطبيق والمطور
+      # 1. تغيير اسم التطبيق والمطور
       - name: Change app name and developer
-        working-directory: source
+        working-directory: source/android-native
         run: |
-          PROJECT_DIR="${{ steps.project.outputs.dir }}"
-          
-          find "$PROJECT_DIR" -name "strings.xml" -not -path "*/build/*" | while read f; do
+          find . -name "strings.xml" -not -path "*/build/*" | while read f; do
             echo "--- $f ---"
             sed -i 's|<string name="app_name">[^<]*</string>|<string name="app_name">STTITEN IP TV</string>|g' "$f"
-            sed -i 's|<string name="app_name" translatable="false">[^<]*</string>|<string name="app_name" translatable="false">STTITEN IP TV</string>|g' "$f"
             if grep -q 'name="developer_name"' "$f"; then
               sed -i 's|<string name="developer_name">[^<]*</string>|<string name="developer_name">جلولي مصطفى</string>|g' "$f"
             fi
           done
           
-          # إنشاء ملف عربي
-          APP_RES_DIR=$(find "$PROJECT_DIR" -type d -name "res" -path "*app/src/main*" | head -1)
-          if [ -n "$APP_RES_DIR" ]; then
-            mkdir -p "$APP_RES_DIR/values-ar"
-            cat > "$APP_RES_DIR/values-ar/strings.xml" << 'EOF'
+          mkdir -p app/src/main/res/values-ar
+          cat > app/src/main/res/values-ar/strings.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
               <string name="app_name">STTITEN IP TV</string>
@@ -132,127 +77,59 @@ jobs:
               <string name="developer_name_latin">Djellouli Mustafa</string>
           </resources>
           EOF
-          fi
           echo "✅ تم تغيير الاسم والمطور"
 
-      # 3. إنشاء صور الشعار
-      - name: Create logo images
-        working-directory: source
+      # 2. تعديل ملفات XML فقط (بدون PNG)
+      - name: Replace text in XML vector files only
+        working-directory: source/android-native
         run: |
-          PROJECT_DIR="${{ steps.project.outputs.dir }}"
-          APP_RES_DIR=$(find "$PROJECT_DIR" -type d -name "res" -path "*app/src/main*" | head -1)
+          echo "===== استبدال النص داخل ملفات XML Vector ====="
           
-          if [ -z "$APP_RES_DIR" ]; then
-            APP_RES_DIR="$PROJECT_DIR/app/src/main/res"
-          fi
-          
-          echo "مجلد الموارد: $APP_RES_DIR"
-          mkdir -p "$APP_RES_DIR/drawable-nodpi"
-          
-          convert -size 1280x720 xc:"#0E1116" -font DejaVu-Sans-Bold -pointsize 120 -fill "#FFFFFF" -gravity center -annotate +0+0 "STTITEN IP TV" "$APP_RES_DIR/drawable-nodpi/sttiten_banner.png"
-          convert -size 512x512 xc:"#0E1116" -font DejaVu-Sans-Bold -pointsize 90 -fill "#FFFFFF" -gravity center -annotate +0+0 "STTITEN" "$APP_RES_DIR/drawable-nodpi/sttiten_icon.png"
-          convert -size 1080x1920 xc:"#0E1116" -font DejaVu-Sans-Bold -pointsize 100 -fill "#FFFFFF" -gravity center -annotate +0+0 "STTITEN IP TV" "$APP_RES_DIR/drawable-nodpi/sttiten_splash.png"
-          
-          ls -la "$APP_RES_DIR/drawable-nodpi/"
-
-      # 4. 🔥 استبدال اسم التطبيق في ملفات XML للأيقونات
-      - name: Replace app name in XML icon files
-        working-directory: source
-        run: |
-          PROJECT_DIR="${{ steps.project.outputs.dir }}"
-          
-          echo "===== البحث عن ملفات XML في مجلدات android-app/android-native ====="
-          
-          # نبحث في كل مجلدات المشروع
-          find "$PROJECT_DIR" -type f -name "*.xml" \( -path "*/drawable/*" -o -path "*/mipmap*/*" \) -not -path "*/build/*" | while read f; do
-            
-            # هل يحتوي الملف على نص "Ultra" أو "UltraTV" أو "ultra_tv"؟
-            if grep -qE ">Ultra|>UltraTV|>Ultra TV|ultra_tv|UltraTV<" "$f" 2>/dev/null; then
-              echo "--- استبدال النص في: $f ---"
-              sed -i 's|>UltraTV<|>STTITEN IP TV<|g' "$f"
+          # البحث في ملفات XML في drawable و layout
+          find app/src/main/res -type f -name "*.xml" \( -path "*/drawable/*" -o -path "*/layout/*" \) | while read f; do
+            # هل يحتوي على نص "Ultra"؟
+            if grep -qiE '>Ultra TV<|>UltraTV<|>Ultra<|"Ultra TV"|"UltraTV"' "$f" 2>/dev/null; then
+              echo "--- تعديل: $f ---"
               sed -i 's|>Ultra TV<|>STTITEN IP TV<|g' "$f"
+              sed -i 's|>UltraTV<|>STTITEN IP TV<|g' "$f"
               sed -i 's|>Ultra<|>STTITEN IP TV<|g' "$f"
-              sed -i 's|"UltraTV"|"STTITEN IP TV"|g' "$f"
               sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$f"
+              sed -i 's|"UltraTV"|"STTITEN IP TV"|g' "$f"
             fi
           done
           
-          echo ""
-          echo "===== البحث في ملفات Kotlin عن Ultra ====="
-          find "$PROJECT_DIR" -name "*.kt" -not -path "*/build/*" | xargs grep -l '"Ultra' 2>/dev/null | head -20 | while read f; do
-            echo "--- $f ---"
-            sed -i 's|"UltraTV"|"STTITEN IP TV"|g' "$f"
-            sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$f"
-            sed -i 's|"Ultra"|"STTITEN IP TV"|g' "$f"
+          # أيضاً في ملفات Kotlin (النصوص الحرفية)
+          find app/src/main/java -name "*.kt" | while read f; do
+            if grep -qE '"Ultra TV"|"UltraTV"' "$f" 2>/dev/null; then
+              echo "--- تعديل Kotlin: $f ---"
+              sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$f"
+              sed -i 's|"UltraTV"|"STTITEN IP TV"|g' "$f"
+            fi
           done
           
           echo "✅ تم البحث والاستبدال"
 
-      # 5. تعديل ملفات XML للأيقونات لتشير إلى الصور الجديدة
-      - name: Modify XML vector icons
-        working-directory: source
-        run: |
-          PROJECT_DIR="${{ steps.project.outputs.dir }}"
-          
-          find "$PROJECT_DIR" -type f -name "*.xml" \( -path "*/drawable/*" -o -path "*/mipmap-anydpi-v26/*" \) -not -path "*/build/*" | while read f; do
-            if echo "$f" | grep -qiE "launcher|banner|splash|ic_"; then
-              # فقط الملفات التي تحتوي على vector أو shape
-              if grep -qE "<vector|<shape|<layer-list" "$f" 2>/dev/null; then
-                echo "--- تعديل: $f ---"
-                if echo "$f" | grep -qi "banner"; then IMG="sttiten_banner"
-                elif echo "$f" | grep -qi "splash"; then IMG="sttiten_splash"
-                else IMG="sttiten_icon"; fi
-                
-                cat > "$f" << XMLEOF
-          <?xml version="1.0" encoding="utf-8"?>
-          <bitmap xmlns:android="http://schemas.android.com/apk/res/android"
-              android:src="@drawable/$IMG"
-              android:gravity="center" />
-          XMLEOF
-              fi
-            fi
-          done
-          echo "✅ تم تعديل ملفات XML"
-
-      # 6. تبعيات QR
+      # 3. إضافة تبعيات QR
       - name: Add QR Code dependencies
-        working-directory: source
+        working-directory: source/android-native
         run: |
-          PROJECT_DIR="${{ steps.project.outputs.dir }}"
-          BUILD_GRADLE=$(find "$PROJECT_DIR" -maxdepth 4 -name "build.gradle.kts" -path "*app*" -not -path "*/build/*" | head -1)
-          
-          if [ -z "$BUILD_GRADLE" ]; then
-            BUILD_GRADLE=$(find "$PROJECT_DIR" -maxdepth 4 -name "build.gradle.kts" -not -path "*/build/*" | head -1)
-          fi
-          
-          echo "ملف البناء: $BUILD_GRADLE"
-          
+          BUILD_GRADLE="app/build.gradle.kts"
           if [ -f "$BUILD_GRADLE" ]; then
             if ! grep -q 'qrose' "$BUILD_GRADLE"; then
               sed -i 's|dependencies {|dependencies {\n    implementation("io.github.alexzhirkevich:qrose:1.1.2")\n    implementation("org.nanohttpd:nanohttpd:2.3.1")|' "$BUILD_GRADLE"
             fi
             echo "✅ تم إضافة تبعيات QR"
-          else
-            echo "⚠️ لم يتم العثور على ملف البناء"
           fi
 
-      # 7. إنشاء ملفات QR
+      # 4. إنشاء ملفات QR
       - name: Create QR files
-        working-directory: source
+        working-directory: source/android-native
         run: |
-          PROJECT_DIR="${{ steps.project.outputs.dir }}"
-          PKG_ROOT=$(find "$PROJECT_DIR" -type d -name "java" -path "*app/src/main*" | head -1)
+          PKG_ROOT="app/src/main/java/com/ultratv/tv/nativeapp"
+          mkdir -p "$PKG_ROOT/qr"
           
-          if [ -z "$PKG_ROOT" ]; then
-            PKG_ROOT="$PROJECT_DIR/app/src/main/java"
-          fi
-          
-          echo "مجلد الكود: $PKG_ROOT"
-          mkdir -p "$PKG_ROOT/com/ultratv/qr"
-          
-          # ملف الخادم
-          cat > "$PKG_ROOT/com/ultratv/qr/QRConfigServer.kt" << 'KOTLIN_EOF'
-          package com.ultratv.qr
+          cat > "$PKG_ROOT/qr/QRConfigServer.kt" << 'KOTLIN_EOF'
+          package com.ultratv.tv.nativeapp.qr
 
           import android.content.Context
           import fi.iki.elonen.NanoHTTPD
@@ -346,8 +223,8 @@ jobs:
           }
           KOTLIN_EOF
 
-          cat > "$PKG_ROOT/com/ultratv/qr/QRConfigScreen.kt" << 'KOTLIN_EOF'
-          package com.ultratv.qr
+          cat > "$PKG_ROOT/qr/QRConfigScreen.kt" << 'KOTLIN_EOF'
+          package com.ultratv.tv.nativeapp.qr
 
           import androidx.compose.foundation.Image
           import androidx.compose.foundation.layout.*
@@ -390,20 +267,15 @@ jobs:
                   Image(painter = painter, contentDescription = "QR Code", modifier = Modifier.size(300.dp))
                   Spacer(Modifier.height(16.dp))
                   Text(url, fontSize = 16.sp, color = Color.Gray)
-                  Spacer(Modifier.height(24.dp))
-                  Text("انتظر حتى يتم استلام البيانات...", fontSize = 16.sp, color = Color.Gray)
               }
           }
           KOTLIN_EOF
-          
           echo "✅ تم إنشاء ملفات QR"
 
-      # 8. إعدادات Gradle
+      # 5. إعدادات Gradle
       - name: Setup Gradle properties
-        working-directory: source
+        working-directory: source/android-native
         run: |
-          PROJECT_DIR="${{ steps.project.outputs.dir }}"
-          cd "$PROJECT_DIR"
           echo "org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8" >> gradle.properties
           echo "org.gradle.daemon=false" >> gradle.properties
           echo "org.gradle.parallel=false" >> gradle.properties
@@ -411,22 +283,22 @@ jobs:
           echo "android.useAndroidX=true" >> gradle.properties
           echo "kotlin.code.style=official" >> gradle.properties
 
-      # 9. البناء
+      - name: Grant execute permission for gradlew
+        working-directory: source/android-native
+        run: chmod +x gradlew
+
+      # 6. البناء
       - name: Build APK
-        working-directory: source
-        run: |
-          PROJECT_DIR="${{ steps.project.outputs.dir }}"
-          cd "$PROJECT_DIR"
-          chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace --no-daemon --no-parallel
+        working-directory: source/android-native
+        run: ./gradlew assembleDebug --stacktrace --no-daemon --no-parallel
 
       - name: List APKs
-        working-directory: source
+        working-directory: source/android-native
         run: find . -name "*.apk" -type f -exec ls -lh {} \;
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: STTITEN-IP-TV-APK
-          path: 'source/**/*.apk'
+          path: 'source/android-native/**/*.apk'
           if-no-files-found: error
