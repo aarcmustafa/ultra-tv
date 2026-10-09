@@ -45,37 +45,25 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: sttiten-ua-${{ hashFiles('source/android-native/**/*.gradle*') }}
-          restore-keys: sttiten-ua-
+          key: sttiten-ua2-${{ hashFiles('source/android-native/**/*.gradle*') }}
+          restore-keys: sttiten-ua2-
 
       # ============================================================
-      # 🔍 1. تشخيص - البحث عن User-Agent وملفات المشغل
+      # 1. تشخيص - البحث عن User-Agent وملفات المشغل
       # ============================================================
-      - name: "Diagnostic - Find User-Agent and Player files"
+      - name: "Diagnostic - Find User-Agent"
         working-directory: source/android-native
         run: |
           echo "===================================================="
-          echo "🔍 البحث عن ملفات Player/Media3"
+          echo "🔍 البحث عن User-Agent في الكود"
           echo "===================================================="
-          find . -name "*.kt" -not -path "*/build/*" 2>/dev/null | xargs grep -l "DefaultHttpDataSource\|OkHttpDataSource\|DataSource.Factory\|ExoPlayer.Builder\|setUserAgent" 2>/dev/null | head -10 || true
+          grep -rn "UserAgent\|userAgent" --include="*.kt" . 2>/dev/null | grep -v "//" | head -20 || true
           
           echo ""
           echo "===================================================="
-          echo "🔍 البحث عن User-Agent الحالي في الكود"
+          echo "🔍 البحث عن UltraTV في الكود"
           echo "===================================================="
-          grep -rn "User-Agent\|setUserAgent\|userAgent" --include="*.kt" . 2>/dev/null | grep -v "//" | head -20 || true
-          
-          echo ""
-          echo "===================================================="
-          echo "🔍 البحث عن STTITEN/ULTRA في User-Agent"
-          echo "===================================================="
-          grep -rn "STTITEN\|ULTRA\|Ultra\|UTV" --include="*.kt" . 2>/dev/null | grep -iE "agent|http|header" | head -10 || true
-          
-          echo ""
-          echo "===================================================="
-          echo "🔍 البحث عن OkHttpClient"
-          echo "===================================================="
-          find . -name "*.kt" -not -path "*/build/*" 2>/dev/null | xargs grep -l "OkHttpClient" 2>/dev/null | head -5 || true
+          grep -rn '"UltraTV"\|"Ultra TV"\|"ULTRA TV"' --include="*.kt" . 2>/dev/null | head -10 || true
 
       # ============================================================
       # 2. تغيير اسم التطبيق والمطور
@@ -117,7 +105,6 @@ jobs:
           echo "===== قبل ====="
           grep -n 'Text("ULTRA' "$TARGET" | head -3 || true
           
-          # استبدال النص الكامل
           sed -i 's|"ULTRA TV"|"STTITEN IP TV"|g' "$TARGET"
           sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$TARGET"
           sed -i 's|"TV ULTRA"|"STTITEN IP TV"|g' "$TARGET"
@@ -140,7 +127,6 @@ jobs:
             sed -i 's|"ULTRA TV"|"STTITEN IP TV"|g' "$f"
             sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$f"
             sed -i 's|"TV ULTRA"|"STTITEN IP TV"|g' "$f"
-            sed -i 's|"UltraTV"|"STTITEN IP TV"|g' "$f"
             sed -i 's|"UTV"|"STTITEN IP TV"|g' "$f"
           done
           echo "✅ تم"
@@ -162,52 +148,41 @@ jobs:
           echo "✅ تم"
 
       # ============================================================
-      # 6. 🎯🔥 إصلاح User-Agent لتشغيل القنوات
+      # 6. 🎯🔥 إصلاح User-Agent - استبدال دقيق
       # ============================================================
-      - name: "Fix User-Agent for stream playback"
+      - name: "Fix User-Agent for stream playback (PRECISE)"
         working-directory: source/android-native
         run: |
           echo "===================================================="
-          echo "🎯 إصلاح User-Agent في ملفات المشغل"
+          echo "🎯 إصلاح User-Agent - استبدال دقيق"
           echo "===================================================="
           
-          # استبدال أي UA فيه STTITEN/ULTRA/UTV إلى okhttp
+          # استبدال "UltraTV/1.0 (Android TV)" الحرفي
           find . -name "*.kt" -not -path "*/build/*" | while read f; do
-            if grep -qE 'UserAgent|userAgent|USER_AGENT|User-Agent' "$f" 2>/dev/null; then
-              echo "--- تعديل: $f ---"
-              
-              # حالة: STTITEN IP TV/1.0 (Android TV)
-              sed -i 's|"STTITEN IP TV/1.0 (Android TV)"|"okhttp/4.12.0"|g' "$f"
-              sed -i 's|"STTITEN IP TV/1.0"|"okhttp/4.12.0"|g' "$f"
-              sed -i 's|"STTITEN IP TV"|"okhttp/4.12.0"|g' "$f"
-              
-              # حالة: setUserAgent("...")
-              sed -i 's|setUserAgent("[^"]*STTITEN[^"]*")|setUserAgent("okhttp/4.12.0")|g' "$f"
-              sed -i 's|setUserAgent("[^"]*ULTRA[^"]*")|setUserAgent("okhttp/4.12.0")|g' "$f"
-              sed -i 's|setUserAgent("[^"]*UTV[^"]*")|setUserAgent("okhttp/4.12.0")|g' "$f"
-              
-              # حالة: UserAgent = "..."
-              sed -i 's|UserAgent\s*=\s*"[^"]*STTITEN[^"]*"|UserAgent = "okhttp/4.12.0"|g' "$f"
-              sed -i 's|UserAgent\s*=\s*"[^"]*ULTRA[^"]*"|UserAgent = "okhttp/4.12.0"|g' "$f"
-              sed -i 's|UserAgent\s*=\s*"[^"]*UTV[^"]*"|UserAgent = "okhttp/4.12.0"|g' "$f"
-            fi
-          done
-          
-          # استبدال آخر لأي User-Agent متعلق بـ OwnTV أو أي قيمة معروفة
-          find . -name "*.kt" -not -path "*/build/*" | while read f; do
-            sed -i 's|"ownTV[^"]*"|"okhttp/4.12.0"|g' "$f"
-            sed -i 's|"OwnTV[^"]*"|"okhttp/4.12.0"|g' "$f"
+            sed -i 's|"UltraTV/1\.0 (Android TV)"|"okhttp/4.12.0"|g' "$f"
+            sed -i 's|"UltraTV/1\.0"|"okhttp/4.12.0"|g' "$f"
+            sed -i 's|"UltraTV"|"okhttp/4.12.0"|g' "$f"
+            sed -i 's|"ULTRA TV"|"okhttp/4.12.0"|g' "$f"
+            sed -i 's|"Ultra TV"|"okhttp/4.12.0"|g' "$f"
+            sed -i 's|"UTV"|"okhttp/4.12.0"|g' "$f"
           done
           
           echo ""
-          echo "===================================================="
-          echo "🔍 التحقق النهائي من User-Agent"
-          echo "===================================================="
-          grep -rn "okhttp/4.12.0" --include="*.kt" . 2>/dev/null | head -10 || echo "⚠️ لم نجد okhttp في الكود - قد يكون UA مضبوطاً من مكان آخر"
+          echo "===== التحقق: هل بقي UltraTV؟ ====="
+          REMAINING=$(find . -name "*.kt" -not -path "*/build/*" | xargs grep -l '"UltraTV"\|"Ultra TV"\|"ULTRA TV"' 2>/dev/null | wc -l)
+          echo "ملفات لا تزال بها UltraTV: $REMAINING"
           
           echo ""
-          echo "===== أي User-Agent آخر موجود؟ ====="
-          grep -rn "setUserAgent\|UserAgent\s*=" --include="*.kt" . 2>/dev/null | head -15 || true
+          echo "===== الملفات المعدلة ====="
+          grep -rn 'okhttp/4.12.0' --include="*.kt" . 2>/dev/null | head -10
+          
+          echo ""
+          echo "===== السطر 384 في PlayerScreen.kt بعد التعديل ====="
+          sed -n '384p' "app/src/main/kotlin/com/ultratv/tv/nativeapp/ui/player/PlayerScreen.kt" 2>/dev/null || echo "الملف غير موجود"
+          
+          echo ""
+          echo "===== السطر 67 في XmltvParser.kt بعد التعديل ====="
+          sed -n '67p' "app/src/main/kotlin/com/ultratv/tv/nativeapp/data/xmltv/XmltvParser.kt" 2>/dev/null || echo "الملف غير موجود"
 
       # ============================================================
       # 7. دمج المعماريتين في APK واحد
@@ -270,6 +245,6 @@ jobs:
       - name: "Upload APK"
         uses: actions/upload-artifact@v4
         with:
-          name: STTITEN-IP-TV-UA-Fixed
+          name: STTITEN-IP-TV-UA-Fixed-V2
           path: 'source/android-native/**/*.apk'
           if-no-files-found: error
