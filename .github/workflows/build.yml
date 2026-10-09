@@ -42,18 +42,18 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: sttiten-v5-${{ hashFiles('source/android-native/**/*.gradle*') }}
-          restore-keys: sttiten-v5-
+          key: sttiten-switch-${{ hashFiles('source/android-native/**/*.gradle*') }}
+          restore-keys: sttiten-switch-
 
-      - name: Diagnostic - Find stream URL builder
+      - name: Diagnostic - Find .ts builder
         working-directory: source/android-native
         run: |
-          echo "===== Xtream/Streaming files ====="
-          find . -path "*xtream*" -name "*.kt" -not -path "*/build/*" -not -path "*/test/*" 2>/dev/null
-          echo "===== Lines with .ts ====="
-          grep -rn '\.ts"' --include="*.kt" . 2>/dev/null | grep -v "*/test/*" | head -20 || true
-          echo "===== Lines with /live/ ====="
-          grep -rn '/live/' --include="*.kt" . 2>/dev/null | grep -v "*/test/*" | head -20 || true
+          echo "===== Files with .ts ====="
+          grep -rln '\.ts"\|\.ts'"'" --include="*.kt" . 2>/dev/null | grep -v "*/test/*" | head -20 || echo "none"
+          echo "===== Exact lines ====="
+          grep -rn '\.ts"\|\.ts'"'" --include="*.kt" . 2>/dev/null | grep -v "*/test/*" | head -20 || echo "none"
+          echo "===== Files with /live/ ====="
+          grep -rln '/live/' --include="*.kt" . 2>/dev/null | grep -v "*/test/*" | head -10 || echo "none"
 
       - name: Change app name and developer
         working-directory: source/android-native
@@ -62,7 +62,6 @@ jobs:
             sed -i 's|<string name="app_name">[^<]*</string>|<string name="app_name">STTITEN IP TV</string>|g' "$f"
             sed -i 's|>UTV<|>STTITEN IP TV<|g' "$f"
             sed -i 's|>Ultra TV<|>STTITEN IP TV<|g' "$f"
-            sed -i 's|>ULTRA TV<|>STTITEN IP TV<|g' "$f"
           done
           mkdir -p app/src/main/res/values-ar
           cat > app/src/main/res/values-ar/strings.xml << 'EOF'
@@ -70,63 +69,53 @@ jobs:
           <resources>
               <string name="app_name">STTITEN IP TV</string>
               <string name="developer_name">جلولي مصطفى</string>
-              <string name="developer_name_latin">Djellouli Mustafa</string>
           </resources>
           EOF
           echo "done"
 
-      - name: Fix TopBar text
+      - name: Fix TopBar
         working-directory: source/android-native
         run: |
-          TARGET="app/src/main/kotlin/com/ultratv/tv/nativeapp/ui/settings/CloudPairingDialog.kt"
-          if [ -f "$TARGET" ]; then
-            sed -i 's|"ULTRA TV"|"STTITEN IP TV"|g' "$TARGET"
-            sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$TARGET"
-            sed -i 's|"UTV"|"STTITEN IP TV"|g' "$TARGET"
-            sed -i 's|letterSpacing = TextUnit(1\.7f, TextUnitType\.Sp)|letterSpacing = TextUnit(0f, TextUnitType.Sp)|g' "$TARGET"
+          T="app/src/main/kotlin/com/ultratv/tv/nativeapp/ui/settings/CloudPairingDialog.kt"
+          if [ -f "$T" ]; then
+            sed -i 's|"ULTRA TV"|"STTITEN IP TV"|g' "$T"
+            sed -i 's|letterSpacing = TextUnit(1\.7f, TextUnitType\.Sp)|letterSpacing = TextUnit(0f, TextUnitType.Sp)|g' "$T"
           fi
 
-      - name: Global replace in Kotlin
-        working-directory: source/android-native
-        run: |
-          find . -name "*.kt" -not -path "*/build/*" | while read f; do
-            sed -i 's|"ULTRA TV"|"STTITEN IP TV"|g' "$f"
-            sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$f"
-            sed -i 's|"UltraTV"|"STTITEN IP TV"|g' "$f"
-            sed -i 's|"UTV"|"STTITEN IP TV"|g' "$f"
-          done
-          echo "done"
-
-      - name: Fix stream URL extension
-        working-directory: source/android-native
-        run: |
-          find . -name "*.kt" -not -path "*/build/*" -not -path "*/test/*" | while read f; do
-            if grep -qE '\.ts"|/live/' "$f" 2>/dev/null; then
-              echo "modifying: $f"
-              sed -i 's|\.ts"|.m3u8"|g' "$f"
-              sed -i "s|\.ts'|.m3u8'|g" "$f"
-              sed -i 's|}\.ts|}.m3u8|g' "$f"
-            fi
-          done
-          echo "===== remaining .ts ====="
-          find . -name "*.kt" -not -path "*/build/*" -not -path "*/test/*" | xargs grep -l '\.ts"' 2>/dev/null | head -5 || echo "none"
-
-      - name: Add QR Code dependencies
-        working-directory: source/android-native
-        run: |
-          BUILD_GRADLE="app/build.gradle.kts"
-          if [ -f "$BUILD_GRADLE" ]; then
-            if ! grep -q 'zxing' "$BUILD_GRADLE"; then
-              sed -i 's|dependencies {|dependencies {\n    implementation("com.google.zxing:core:3.5.3")\n    implementation("org.nanohttpd:nanohttpd:2.3.1")|' "$BUILD_GRADLE"
-            fi
-          fi
-          echo "dependencies added"
-
-      - name: Create QR Server file
+      - name: Create StreamPref helper
         working-directory: source/android-native
         run: |
           PKG="app/src/main/kotlin/com/ultratv/tv/nativeapp/qr"
           mkdir -p "$PKG"
+          cat > "$PKG/StreamPref.kt" << 'KOTLIN_EOF'
+          package com.ultratv.tv.nativeapp.qr
+          import android.content.Context
+          object StreamPref {
+              private const val PREFS = "sttiten_stream"
+              private const val KEY_EXT = "stream_ext"
+              private const val DEFAULT = "m3u8"
+              fun getExt(context: Context): String {
+                  return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                      .getString(KEY_EXT, DEFAULT) ?: DEFAULT
+              }
+              fun setExt(context: Context, ext: String) {
+                  context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                      .edit().putString(KEY_EXT, ext).apply()
+              }
+              fun applyTo(context: Context, baseUrl: String): String {
+                  val ext = getExt(context)
+                  if (ext.isEmpty()) return baseUrl
+                  val clean = baseUrl.substringBeforeLast('.')
+                  return "$clean.$ext"
+              }
+          }
+          KOTLIN_EOF
+          echo "StreamPref created"
+
+      - name: Create QR Server file (with extension selector)
+        working-directory: source/android-native
+        run: |
+          PKG="app/src/main/kotlin/com/ultratv/tv/nativeapp/qr"
           cat > "$PKG/QRConfigServer.kt" << 'KOTLIN_EOF'
           package com.ultratv.tv.nativeapp.qr
           import android.content.Context
@@ -142,7 +131,40 @@ jobs:
                   }
               }
               private fun serveForm(): Response {
-                  val html = "<html dir='rtl'><body style='font-family:Arial;padding:20px;background:#0E1116;color:#FFF'><h1 style='color:#FF3A2F;text-align:center'>STTITEN IP TV</h1><form action='/submit' method='POST'><label>type:</label><select name='type'><option value='xtream'>Xtream</option><option value='m3u'>M3U/M3U8</option></select><br><label>Server URL:</label><input type='text' name='serverUrl'><br><label>Username:</label><input type='text' name='username'><br><label>Password:</label><input type='password' name='password'><br><label>M3U URL:</label><input type='text' name='m3uUrl'><br><button type='submit' style='padding:12px;background:#FF3A2F;color:#FFF;border:none;border-radius:8px'>Send</button></form></body></html>"
+                  val current = StreamPref.getExt(context)
+                  val html = """
+          <!DOCTYPE html><html dir="rtl" lang="ar">
+          <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+          <title>STTITEN IP TV</title>
+          <style>body{font-family:Arial;max-width:480px;margin:20px auto;padding:20px;background:#0E1116;color:#FFF}h1{color:#FF3A2F;text-align:center}label{display:block;margin-top:15px;font-weight:bold}input,select{width:100%;padding:12px;margin-top:5px;border-radius:8px;border:1px solid #333;background:#1A1D23;color:#FFF;box-sizing:border-box}button{width:100%;padding:15px;margin-top:20px;background:#FF3A2F;color:#FFF;border:none;border-radius:8px;font-size:16px;cursor:pointer}.hidden{display:none}.hint{color:#888;font-size:12px;margin-top:4px}</style></head>
+          <body><h1>STTITEN IP TV</h1>
+          <form action="/submit" method="POST">
+          <label>نوع المصدر:</label>
+          <select name="type" onchange="tf()" id="tsel">
+          <option value="xtream">Xtream Codes</option>
+          <option value="m3u">رابط M3U / M3U8</option>
+          </select>
+          <div id="xf">
+          <label>عنوان السيرفر:</label><input type="text" name="serverUrl" placeholder="http://example.com:8080">
+          <label>اسم المستخدم:</label><input type="text" name="username">
+          <label>كلمة المرور:</label><input type="password" name="password">
+          </div>
+          <div id="mf" class="hidden">
+          <label>رابط M3U / M3U8:</label><input type="text" name="m3uUrl">
+          </div>
+          <label>امتداد البث (للقنوات المباشرة):</label>
+          <select name="streamExt">
+          <option value="m3u8" ${if(current=="m3u8")"selected" else ""}>m3u8 (موصى به)</option>
+          <option value="ts" ${if(current=="ts")"selected" else ""}>ts (تقليدي)</option>
+          <option value="m3u" ${if(current=="m3u")"selected" else ""}>m3u</option>
+          <option value="" ${if(current=="")"selected" else ""}>بدون امتداد</option>
+          </select>
+          <div class="hint">إذا لم تعمل القنوات، جرب امتداداً آخر</div>
+          <button type="submit">حفظ وإرسال</button>
+          </form>
+          <script>function tf(){var t=document.getElementById('tsel').value;document.getElementById('xf').classList.toggle('hidden',t!=='xtream');document.getElementById('mf').classList.toggle('hidden',t!=='m3u');}</script>
+          </body></html>
+                  """.trimIndent()
                   return newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", html)
               }
               private fun handleSubmit(session: IHTTPSession): Response {
@@ -160,8 +182,10 @@ jobs:
                   } else {
                       ed.putString("m3uUrl", params["m3uUrl"]?.firstOrNull() ?: "")
                   }
+                  val ext = params["streamExt"]?.firstOrNull() ?: "m3u8"
+                  StreamPref.setExt(context, ext)
                   ed.apply()
-                  return newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", "<h1 style='color:green;text-align:center;padding:40px;background:#0E1116'>OK</h1>")
+                  return newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", "<h1 style='color:green;text-align:center;padding:40px;background:#0E1116'>تم الحفظ</h1>")
               }
               fun getLocalIp(): String {
                   val interfaces = NetworkInterface.getNetworkInterfaces()
@@ -230,24 +254,35 @@ jobs:
           MANIFEST="app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ]; then
             if ! grep -q "QRConfigActivity" "$MANIFEST"; then
-              perl -i -pe 's|(</application>)|    <activity\n        android:name="com.ultratv.tv.nativeapp.qr.QRConfigActivity"\n        android:exported="true"\n        android:label="STTITEN QR Setup">\n        <intent-filter>\n            <action android:name="android.intent.action.MAIN" />\n            <category android:name="android.intent.category.LEANBACK_LAUNCHER" />\n            <category android:name="android.intent.category.LAUNCHER" />\n        </intent-filter>\n    </activity>\n$1|' "$MANIFEST"
+              perl -i -pe 's|(</application>)|    <activity\n        android:name="com.ultratv.tv.nativeapp.qr.QRConfigActivity"\n        android:exported="true"\n        android:label="STTITEN Setup">\n        <intent-filter>\n            <action android:name="android.intent.action.MAIN" />\n            <category android:name="android.intent.category.LEANBACK_LAUNCHER" />\n            <category android:name="android.intent.category.LAUNCHER" />\n        </intent-filter>\n    </activity>\n$1|' "$MANIFEST"
             fi
           fi
           echo "manifest updated"
 
+      - name: Add QR dependencies
+        working-directory: source/android-native
+        run: |
+          B="app/build.gradle.kts"
+          if [ -f "$B" ]; then
+            if ! grep -q 'zxing' "$B"; then
+              sed -i 's|dependencies {|dependencies {\n    implementation("com.google.zxing:core:3.5.3")\n    implementation("org.nanohttpd:nanohttpd:2.3.1")|' "$B"
+            fi
+          fi
+          echo "deps added"
+
       - name: Configure universal APK
         working-directory: source/android-native
         run: |
-          APP_GRADLE="app/build.gradle.kts"
-          if [ -f "$APP_GRADLE" ]; then
-            if ! grep -q 'abiFilters' "$APP_GRADLE"; then
-              perl -i -pe 's/(defaultConfig\s*\{)/$1\n        ndk {\n            abiFilters += listOf("arm64-v8a", "armeabi-v7a")\n        }/' "$APP_GRADLE"
+          A="app/build.gradle.kts"
+          if [ -f "$A" ]; then
+            if ! grep -q 'abiFilters' "$A"; then
+              perl -i -pe 's/(defaultConfig\s*\{)/$1\n        ndk {\n            abiFilters += listOf("arm64-v8a", "armeabi-v7a")\n        }/' "$A"
             fi
-            if ! grep -q 'useLegacyPackaging' "$APP_GRADLE"; then
-              perl -i -pe 's/(android\s*\{)/$1\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' "$APP_GRADLE"
+            if ! grep -q 'useLegacyPackaging' "$A"; then
+              perl -i -pe 's/(android\s*\{)/$1\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' "$A"
             fi
           fi
-          echo "universal APK configured"
+          echo "universal configured"
 
       - name: Setup Gradle properties
         working-directory: source/android-native
@@ -267,14 +302,13 @@ jobs:
         working-directory: source/android-native
         run: ./gradlew assembleDebug --stacktrace --no-daemon --no-parallel
 
-      - name: Show APK info
+      - name: Show APK
         working-directory: source/android-native
-        run: |
-          find . -name "*.apk" -exec ls -lh {} \;
+        run: find . -name "*.apk" -exec ls -lh {} \;
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: STTITEN-IP-TV-Final
+          name: STTITEN-IP-TV-Switch
           path: 'source/android-native/**/*.apk'
           if-no-files-found: error
