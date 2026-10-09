@@ -1,4 +1,4 @@
-name: Build STTITEN IP TV - Genius Edition
+name: Build STTITEN IP TV
 
 on:
   push:
@@ -45,152 +45,49 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: sttiten-genius-${{ hashFiles('source/android-native/**/*.gradle*') }}
-          restore-keys: sttiten-genius-
+          key: sttiten-ua-${{ hashFiles('source/android-native/**/*.gradle*') }}
+          restore-keys: sttiten-ua-
 
       # ============================================================
-      # 🔍 المرحلة 1: مسح شامل - كل ملف يحتوي ULTRA/UTV بأي امتداد
+      # 🔍 1. تشخيص - البحث عن User-Agent وملفات المشغل
       # ============================================================
-      - name: "Phase 1 - Exhaustive scan (ALL file types)"
+      - name: "Diagnostic - Find User-Agent and Player files"
         working-directory: source/android-native
         run: |
           echo "===================================================="
-          echo "🔍 كل ملف يحتوي ULTRA أو UTV (جميع الامتدادات)"
+          echo "🔍 البحث عن ملفات Player/Media3"
           echo "===================================================="
-          
-          # البحث في كل الملفات (وليس فقط kt/xml)
-          find . -type f -not -path "*/build/*" -not -path "*/.git/*" 2>/dev/null | while read f; do
-            if file "$f" | grep -qE "text|ASCII|UTF-8|Unicode"; then
-              if grep -qE "ULTRA|Ultra|UTV|ultra|utv" "$f" 2>/dev/null; then
-                echo "📄 $f"
-              fi
-            fi
-          done | sort | head -50
+          find . -name "*.kt" -not -path "*/build/*" 2>/dev/null | xargs grep -l "DefaultHttpDataSource\|OkHttpDataSource\|DataSource.Factory\|ExoPlayer.Builder\|setUserAgent" 2>/dev/null | head -10 || true
           
           echo ""
           echo "===================================================="
-          echo "🔍 كل الأسطر التي تحتوي ULTRA/UTV (تفصيلي)"
+          echo "🔍 البحث عن User-Agent الحالي في الكود"
           echo "===================================================="
-          
-          find . -type f \( -name "*.kt" -o -name "*.java" -o -name "*.xml" -o -name "*.json" -o -name "*.kts" -o -name "*.gradle" -o -name "*.properties" -o -name "*.txt" \) \
-            -not -path "*/build/*" 2>/dev/null | while read f; do
-            MATCHES=$(grep -nE '"ULTRA|"Ultra|"UTV|>ULTRA|>Ultra|>UTV|ULTRA TV|Ultra TV|TV ULTRA' "$f" 2>/dev/null | head -5)
-            if [ -n "$MATCHES" ]; then
-              echo "--- $f ---"
-              echo "$MATCHES"
-            fi
-          done | head -80
-
-      # ============================================================
-      # 🔥 المرحلة 2: استبدال ذكي - يحافظ على البنية
-      # ============================================================
-      - name: "Phase 2 - Genius replace (structure-preserving)"
-        working-directory: source/android-native
-        run: |
-          echo "===================================================="
-          echo "🔥 بدء الاستبدال الذكي"
-          echo "===================================================="
-          
-          # نستخدم ترتيب مهم: من الأطول إلى الأقصر لتجنب الاستبدال الجزئي
-          # الترتيب: ULTRA TV → Ultra TV → UltraTV → TV ULTRA → UTV → ULTRA (وحيد)
-          
-          COUNT=0
-          
-          # المرور على جميع الملفات النصية
-          find . -type f \( -name "*.kt" -o -name "*.java" -o -name "*.xml" -o -name "*.json" -o -name "*.kts" -o -name "*.gradle" -o -name "*.properties" \) \
-            -not -path "*/build/*" 2>/dev/null | while read f; do
-            
-            # نسخة احتياطية
-            cp "$f" "$f.bak" 2>/dev/null
-            
-            # 1. النص الكامل "ULTRA TV"
-            sed -i 's|ULTRA TV|STTITEN IP TV|g' "$f" 2>/dev/null
-            sed -i 's|Ultra TV|STTITEN IP TV|g' "$f" 2>/dev/null
-            sed -i 's|TV ULTRA|STTITEN IP TV|g' "$f" 2>/dev/null
-            sed -i 's|UltraTV|STTITEN IP TV|g' "$f" 2>/dev/null
-            
-            # 2. "UTV" كامل
-            sed -i 's|"UTV"|"STTITEN IP TV"|g' "$f" 2>/dev/null
-            sed -i 's|>UTV<|>STTITEN IP TV<|g' "$f" 2>/dev/null
-            sed -i 's|= UTV|= STTITEN IP TV|g' "$f" 2>/dev/null
-            
-            # 3. "ULTRA" منفرد في نصوص Kotlin فقط (بين علامتي تنصيص)
-            sed -i 's|"ULTRA"|"STTITEN IP TV"|g' "$f" 2>/dev/null
-            sed -i 's|"Ultra"|"STTITEN IP TV"|g' "$f" 2>/dev/null
-            
-            # 4. حالات خاصة مع مسافات
-            sed -i 's|" ULTRA"|" STTITEN IP TV"|g' "$f" 2>/dev/null
-            sed -i 's|"ULTRA "|"STTITEN IP TV "|g' "$f" 2>/dev/null
-            
-            # التحقق من التغيير
-            if ! diff -q "$f.bak" "$f" > /dev/null 2>&1; then
-              echo "✅ تم تعديل: $f"
-              rm -f "$f.bak"
-            else
-              rm -f "$f.bak"
-            fi
-          done
-
-      # ============================================================
-      # 🔍 المرحلة 3: التحقق النهائي - هل بقي شيء؟
-      # ============================================================
-      - name: "Phase 3 - Verification (find remaining)"
-        working-directory: source/android-native
-        run: |
-          echo "===================================================="
-          echo "🔍 التحقق النهائي: هل بقي ULTRA/UTV؟"
-          echo "===================================================="
-          
-          REMAINING=$(find . -type f \( -name "*.kt" -o -name "*.java" -o -name "*.xml" \) \
-            -not -path "*/build/*" 2>/dev/null | xargs grep -lE '"ULTRA TV"|"Ultra TV"|"TV ULTRA"|"UTV"|>ULTRA TV<|>UTV<' 2>/dev/null | head -20)
-          
-          if [ -n "$REMAINING" ]; then
-            echo "⚠️ ملفات لا تزال بها النص القديم:"
-            echo "$REMAINING"
-            echo ""
-            echo "===== التفاصيل ====="
-            echo "$REMAINING" | while read f; do
-              grep -nE '"ULTRA TV"|"Ultra TV"|"UTV"' "$f" | head -3
-            done
-          else
-            echo "✅ لا يوجد أي نص قديم في ملفات .kt/.java/.xml"
-          fi
-
-      # ============================================================
-      # 🎯 المرحلة 4: فحص خاص لملفات TopBar المعروفة
-      # ============================================================
-      - name: "Phase 4 - Special check for known TopBar files"
-        working-directory: source/android-native
-        run: |
-          echo "===================================================="
-          echo "🎯 فحص الملفات المشتبه بها في الشريط العلوي"
-          echo "===================================================="
-          
-          # الملفات المشتبه بها
-          for f in \
-            "app/src/main/kotlin/com/ultratv/tv/nativeapp/ui/mobile/MobileHome.kt" \
-            "app/src/main/kotlin/com/ultratv/tv/nativeapp/i18n/Strings.kt" \
-            "app/src/main/kotlin/com/ultratv/tv/nativeapp/ui/settings/CloudPairingDialog.kt"; do
-            
-            if [ -f "$f" ]; then
-              echo ""
-              echo "--- $f ---"
-              grep -nE 'ULTRA|UTV|STTITEN|Text\("' "$f" | head -10 || echo "(لا يوجد)"
-            fi
-          done
+          grep -rn "User-Agent\|setUserAgent\|userAgent" --include="*.kt" . 2>/dev/null | grep -v "//" | head -20 || true
           
           echo ""
-          echo "===== البحث عن LogoMark ====="
-          find . -name "*.kt" -not -path "*/build/*" | xargs grep -l "LogoMark" 2>/dev/null | head -5
+          echo "===================================================="
+          echo "🔍 البحث عن STTITEN/ULTRA في User-Agent"
+          echo "===================================================="
+          grep -rn "STTITEN\|ULTRA\|Ultra\|UTV" --include="*.kt" . 2>/dev/null | grep -iE "agent|http|header" | head -10 || true
+          
+          echo ""
+          echo "===================================================="
+          echo "🔍 البحث عن OkHttpClient"
+          echo "===================================================="
+          find . -name "*.kt" -not -path "*/build/*" 2>/dev/null | xargs grep -l "OkHttpClient" 2>/dev/null | head -5 || true
 
       # ============================================================
-      # 5. اسم التطبيق والمطور في strings.xml
+      # 2. تغيير اسم التطبيق والمطور
       # ============================================================
-      - name: Change app name in strings.xml
+      - name: Change app name and developer
         working-directory: source/android-native
         run: |
           find . -name "strings.xml" -not -path "*/build/*" | while read f; do
             sed -i 's|<string name="app_name">[^<]*</string>|<string name="app_name">STTITEN IP TV</string>|g' "$f"
+            sed -i 's|>UTV<|>STTITEN IP TV<|g' "$f"
+            sed -i 's|>Ultra TV<|>STTITEN IP TV<|g' "$f"
+            sed -i 's|>ULTRA TV<|>STTITEN IP TV<|g' "$f"
           done
           
           mkdir -p app/src/main/res/values-ar
@@ -202,25 +99,139 @@ jobs:
               <string name="developer_name_latin">Djellouli Mustafa</string>
           </resources>
           EOF
+          echo "✅ تم تغيير الاسم والمطور"
+
+      # ============================================================
+      # 3. إصلاح الشريط العلوي (CloudPairingDialog.kt)
+      # ============================================================
+      - name: "Fix TopBar text"
+        working-directory: source/android-native
+        run: |
+          TARGET="app/src/main/kotlin/com/ultratv/tv/nativeapp/ui/settings/CloudPairingDialog.kt"
+          
+          if [ ! -f "$TARGET" ]; then
+            echo "⚠️ الملف غير موجود"
+            exit 0
+          fi
+          
+          echo "===== قبل ====="
+          grep -n 'Text("ULTRA' "$TARGET" | head -3 || true
+          
+          # استبدال النص الكامل
+          sed -i 's|"ULTRA TV"|"STTITEN IP TV"|g' "$TARGET"
+          sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$TARGET"
+          sed -i 's|"TV ULTRA"|"STTITEN IP TV"|g' "$TARGET"
+          sed -i 's|"UTV"|"STTITEN IP TV"|g' "$TARGET"
+          
+          # إزالة letterSpacing
+          sed -i 's|letterSpacing = TextUnit(1\.7f, TextUnitType\.Sp)|letterSpacing = TextUnit(0f, TextUnitType.Sp)|g' "$TARGET"
+          sed -i 's|letterSpacing = TextUnit(1\.7f,.*Sp)|letterSpacing = TextUnit(0f, TextUnitType.Sp)|g' "$TARGET"
+          
+          echo "===== بعد ====="
+          sed -n '79p' "$TARGET" || true
+
+      # ============================================================
+      # 4. استبدال شامل في كل ملفات Kotlin
+      # ============================================================
+      - name: "Global replace in Kotlin"
+        working-directory: source/android-native
+        run: |
+          find . -name "*.kt" -not -path "*/build/*" | while read f; do
+            sed -i 's|"ULTRA TV"|"STTITEN IP TV"|g' "$f"
+            sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$f"
+            sed -i 's|"TV ULTRA"|"STTITEN IP TV"|g' "$f"
+            sed -i 's|"UltraTV"|"STTITEN IP TV"|g' "$f"
+            sed -i 's|"UTV"|"STTITEN IP TV"|g' "$f"
+          done
           echo "✅ تم"
 
       # ============================================================
-      # 6. دمج المعماريتين
+      # 5. استبدال في ملفات XML
       # ============================================================
-      - name: Configure universal APK
+      - name: "Replace in XML files"
+        working-directory: source/android-native/app/src/main/res
+        run: |
+          find . -name "*.xml" -type f | while read f; do
+            if grep -qE ">UTV<|>Ultra TV<|>ULTRA TV<|>TV ULTRA<" "$f" 2>/dev/null; then
+              sed -i 's|>UTV<|>STTITEN IP TV<|g' "$f"
+              sed -i 's|>Ultra TV<|>STTITEN IP TV<|g' "$f"
+              sed -i 's|>ULTRA TV<|>STTITEN IP TV<|g' "$f"
+              sed -i 's|>TV ULTRA<|>STTITEN IP TV<|g' "$f"
+            fi
+          done
+          echo "✅ تم"
+
+      # ============================================================
+      # 6. 🎯🔥 إصلاح User-Agent لتشغيل القنوات
+      # ============================================================
+      - name: "Fix User-Agent for stream playback"
+        working-directory: source/android-native
+        run: |
+          echo "===================================================="
+          echo "🎯 إصلاح User-Agent في ملفات المشغل"
+          echo "===================================================="
+          
+          # استبدال أي UA فيه STTITEN/ULTRA/UTV إلى okhttp
+          find . -name "*.kt" -not -path "*/build/*" | while read f; do
+            if grep -qE 'UserAgent|userAgent|USER_AGENT|User-Agent' "$f" 2>/dev/null; then
+              echo "--- تعديل: $f ---"
+              
+              # حالة: STTITEN IP TV/1.0 (Android TV)
+              sed -i 's|"STTITEN IP TV/1.0 (Android TV)"|"okhttp/4.12.0"|g' "$f"
+              sed -i 's|"STTITEN IP TV/1.0"|"okhttp/4.12.0"|g' "$f"
+              sed -i 's|"STTITEN IP TV"|"okhttp/4.12.0"|g' "$f"
+              
+              # حالة: setUserAgent("...")
+              sed -i 's|setUserAgent("[^"]*STTITEN[^"]*")|setUserAgent("okhttp/4.12.0")|g' "$f"
+              sed -i 's|setUserAgent("[^"]*ULTRA[^"]*")|setUserAgent("okhttp/4.12.0")|g' "$f"
+              sed -i 's|setUserAgent("[^"]*UTV[^"]*")|setUserAgent("okhttp/4.12.0")|g' "$f"
+              
+              # حالة: UserAgent = "..."
+              sed -i 's|UserAgent\s*=\s*"[^"]*STTITEN[^"]*"|UserAgent = "okhttp/4.12.0"|g' "$f"
+              sed -i 's|UserAgent\s*=\s*"[^"]*ULTRA[^"]*"|UserAgent = "okhttp/4.12.0"|g' "$f"
+              sed -i 's|UserAgent\s*=\s*"[^"]*UTV[^"]*"|UserAgent = "okhttp/4.12.0"|g' "$f"
+            fi
+          done
+          
+          # استبدال آخر لأي User-Agent متعلق بـ OwnTV أو أي قيمة معروفة
+          find . -name "*.kt" -not -path "*/build/*" | while read f; do
+            sed -i 's|"ownTV[^"]*"|"okhttp/4.12.0"|g' "$f"
+            sed -i 's|"OwnTV[^"]*"|"okhttp/4.12.0"|g' "$f"
+          done
+          
+          echo ""
+          echo "===================================================="
+          echo "🔍 التحقق النهائي من User-Agent"
+          echo "===================================================="
+          grep -rn "okhttp/4.12.0" --include="*.kt" . 2>/dev/null | head -10 || echo "⚠️ لم نجد okhttp في الكود - قد يكون UA مضبوطاً من مكان آخر"
+          
+          echo ""
+          echo "===== أي User-Agent آخر موجود؟ ====="
+          grep -rn "setUserAgent\|UserAgent\s*=" --include="*.kt" . 2>/dev/null | head -15 || true
+
+      # ============================================================
+      # 7. دمج المعماريتين في APK واحد
+      # ============================================================
+      - name: "Configure universal APK (arm64 + armv7)"
         working-directory: source/android-native
         run: |
           APP_GRADLE="app/build.gradle.kts"
           if [ -f "$APP_GRADLE" ]; then
             if ! grep -q 'abiFilters' "$APP_GRADLE"; then
               perl -i -pe 's/(defaultConfig\s*\{)/$1\n        ndk {\n            abiFilters += listOf("arm64-v8a", "armeabi-v7a")\n        }/' "$APP_GRADLE"
+              echo "✅ تم إضافة abiFilters"
             fi
+            
             if ! grep -q 'useLegacyPackaging' "$APP_GRADLE"; then
               perl -i -pe 's/(android\s*\{)/$1\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' "$APP_GRADLE"
+              echo "✅ تم إضافة packaging"
             fi
           fi
 
-      - name: Setup Gradle properties
+      # ============================================================
+      # 8. إعدادات Gradle
+      # ============================================================
+      - name: "Setup Gradle properties"
         working-directory: source/android-native
         run: |
           echo "org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8" >> gradle.properties
@@ -230,40 +241,35 @@ jobs:
           echo "android.useAndroidX=true" >> gradle.properties
           echo "kotlin.code.style=official" >> gradle.properties
 
-      - name: Grant execute permission
+      - name: "Grant execute permission"
         working-directory: source/android-native
         run: chmod +x gradlew
 
       # ============================================================
-      # 7. البناء
+      # 9. البناء
       # ============================================================
-      - name: Build APK
+      - name: "Build APK"
         working-directory: source/android-native
         run: ./gradlew assembleDebug --stacktrace --no-daemon --no-parallel
 
       # ============================================================
-      # 8. فحص APK النهائي للتأكد
+      # 10. التحقق النهائي
       # ============================================================
-      - name: Verify APK contents
+      - name: "Show APK info"
         working-directory: source/android-native
         run: |
           echo "===== حجم APK ====="
           find . -name "*.apk" -exec ls -lh {} \;
           
-          APK=$(find . -name "*.apk" | head -1)
-          if [ -n "$APK" ]; then
-            echo ""
-            echo "===== هل يحتوي APK على النص القديم؟ ====="
-            unzip -p "$APK" resources.arsc 2>/dev/null | strings | grep -E "ULTRA TV|Ultra TV|UTV" | head -5 || echo "✅ لا يوجد نص قديم في الموارد"
-            
-            echo ""
-            echo "===== هل يحتوي على STTITEN IP TV؟ ====="
-            unzip -p "$APK" resources.arsc 2>/dev/null | strings | grep "STTITEN" | head -5 || echo "⚠️ لم يُعثر على STTITEN"
-          fi
+          echo ""
+          echo "===== المعماريات المضمنة ====="
+          for apk in $(find . -name "*.apk" | head -1); do
+            unzip -l "$apk" | grep "\.so$" | awk '{print $4}' | grep -oE "lib/[^/]+" | sort -u
+          done
 
-      - name: Upload APK
+      - name: "Upload APK"
         uses: actions/upload-artifact@v4
         with:
-          name: STTITEN-IP-TV-Universal
+          name: STTITEN-IP-TV-UA-Fixed
           path: 'source/android-native/**/*.apk'
           if-no-files-found: error
