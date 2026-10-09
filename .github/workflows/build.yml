@@ -9,7 +9,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      # 1. استنساخ Ultra TV
       - name: Checkout Ultra TV
         uses: actions/checkout@v4
         with:
@@ -50,121 +49,91 @@ jobs:
           restore-keys: sttiten-final-
 
       # ============================================================
-      # 2. تشخيص شامل: عرض ملفات XML و PNG
+      # 1. تغيير اسم التطبيق (UTV → STTITEN IP TV)
       # ============================================================
-      - name: Diagnostic - List XML and PNG files
-        working-directory: source/android-native
-        run: |
-          echo "===== ملفات PNG (لن نلمسها) ====="
-          find app/src/main/res -name "*.png" \( -path "*/drawable*/*" -o -path "*/mipmap*/*" \) | sort
-          
-          echo ""
-          echo "===== ملفات XML في drawable ====="
-          find app/src/main/res -name "*.xml" -path "*/drawable/*" | sort
-          
-          echo ""
-          echo "===== ملفات XML في mipmap-anydpi-v26 ====="
-          find app/src/main/res -name "*.xml" -path "*/mipmap-anydpi-v26/*" | sort
-
-      # ============================================================
-      # 3. البحث عن "TV ULTRA" و "ULTRA TV" في كل مكان
-      # ============================================================
-      - name: Find brand name everywhere
-        working-directory: source/android-native
-        run: |
-          echo "===== [1] في strings.xml ====="
-          find . -name "strings.xml" -not -path "*/build/*" | while read f; do
-            echo "--- $f ---"
-            grep -nE 'TV|ULTRA|Ultra|brand|title|app_name|top_bar' "$f" 2>/dev/null || echo "  (فارغ)"
-          done
-          
-          echo ""
-          echo "===== [2] نصوص حرفية في Kotlin ====="
-          grep -rnE '"ULTRA"|"Ultra"|"TV ULTRA"|"ULTRA TV"|"Ultra TV"|"UltraTV"' --include="*.kt" . 2>/dev/null | head -30 || echo "لا يوجد"
-          
-          echo ""
-          echo "===== [3] ملفات TopBar/BrandLockup ====="
-          grep -rln "TopAppBar\|BrandLockup\|TopBar" --include="*.kt" . 2>/dev/null | head -10
-          
-          echo ""
-          echo "===== [4] محتوى ملفات TopBar ====="
-          for f in $(grep -rln "TopAppBar\|BrandLockup" --include="*.kt" . 2>/dev/null | head -3); do
-            echo "--- $f ---"
-            grep -nE 'Text\(|stringResource|"TV"|"ULTRA"|"Ultra"' "$f" | head -20
-            echo ""
-          done
-
-      # ============================================================
-      # 4. تغيير الاسم والمطور في strings.xml
-      # ============================================================
-      - name: Change app name and developer
+      - name: Change app name in strings.xml
         working-directory: source/android-native
         run: |
           find . -name "strings.xml" -not -path "*/build/*" | while read f; do
-            # استبدال القيم
+            # تغيير اسم التطبيق الرئيسي
+            sed -i 's|<string name="app_name">[^<]*</string>|<string name="app_name">STTITEN IP TV</string>|g' "$f"
+            # استبدال قيم أخرى
+            sed -i 's|>UTV<|>STTITEN IP TV<|g' "$f"
             sed -i 's|>Ultra TV<|>STTITEN IP TV<|g' "$f"
             sed -i 's|>ULTRA TV<|>STTITEN IP TV<|g' "$f"
-            sed -i 's|>TV ULTRA<|>STTITEN IP TV<|g' "$f"
-            sed -i 's|>TV Ultra<|>STTITEN IP TV<|g' "$f"
-            sed -i 's|>UltraTV<|>STTITEN IP TV<|g' "$f"
-            sed -i 's|>Ultra_TV<|>STTITEN IP TV<|g' "$f"
-            sed -i 's|>Ultra<|>STTITEN IP TV<|g' "$f"
-            
-            # استبدال app_name
-            sed -i 's|<string name="app_name">[^<]*</string>|<string name="app_name">STTITEN IP TV</string>|g' "$f"
           done
           
-          # ملف عربي
           mkdir -p app/src/main/res/values-ar
           cat > app/src/main/res/values-ar/strings.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
               <string name="app_name">STTITEN IP TV</string>
               <string name="developer_name">جلولي مصطفى</string>
-              <string name="developer_name_latin">Djellouli Mustafa</string>
+              <string name="developer_name_latin">Djelloubi Mustafa</string>
           </resources>
           EOF
           
-          echo "✅ تم تغيير الاسم في strings.xml"
+          echo "===== التحقق ====="
+          grep -n 'name="app_name"' app/src/main/res/values/strings.xml
 
       # ============================================================
-      # 5. استبدال النصوص الحرفية في Kotlin
+      # 2. 🔥 استبدال "ULTRA TV" في CloudPairingDialog.kt (المسؤول عن الشريط العلوي)
       # ============================================================
-      - name: Replace brand name in Kotlin files
+      - name: Replace ULTRA TV in CloudPairingDialog
+        working-directory: source/android-native
+        run: |
+          TARGET="app/src/main/kotlin/com/ultratv/tv/nativeapp/ui/settings/CloudPairingDialog.kt"
+          
+          if [ -f "$TARGET" ]; then
+            echo "===== قبل التعديل ====="
+            grep -n "ULTRA\|Ultra" "$TARGET"
+            
+            # استبدال النص الحرفي فقط داخل Text()
+            sed -i 's|"ULTRA TV"|"STTITEN IP TV"|g' "$TARGET"
+            sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$TARGET"
+            sed -i 's|"ULTRA"|"STTITEN"|g' "$TARGET"
+            
+            echo ""
+            echo "===== بعد التعديل ====="
+            grep -n "STTITEN\|ULTRA\|Ultra" "$TARGET"
+          else
+            echo "⚠️ لم يتم العثور على الملف"
+          fi
+
+      # ============================================================
+      # 3. استبدال شامل لأي "ULTRA TV" آخر
+      # ============================================================
+      - name: Replace brand everywhere in Kotlin
         working-directory: source/android-native
         run: |
           find . -name "*.kt" -not -path "*/build/*" | while read f; do
-            sed -i 's|"TV ULTRA"|"STTITEN IP TV"|g' "$f"
             sed -i 's|"ULTRA TV"|"STTITEN IP TV"|g' "$f"
+            sed -i 's|"TV ULTRA"|"STTITEN IP TV"|g' "$f"
             sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$f"
-            sed -i 's|"TV Ultra"|"STTITEN IP TV"|g' "$f"
             sed -i 's|"UltraTV"|"STTITEN IP TV"|g' "$f"
-            sed -i 's|"Ultra"|"STTITEN IP TV"|g' "$f"
-            sed -i 's|"ULTRA"|"STTITEN IP TV"|g' "$f"
           done
           
-          echo "✅ تم استبدال النصوص الحرفية في Kotlin"
+          echo "===== التحقق من النصوص المتبقية ====="
+          grep -rn '"ULTRA TV"\|"Ultra TV"\|"TV ULTRA"' --include="*.kt" . 2>/dev/null | head -5 || echo "لا شيء ✅"
           
           echo ""
-          echo "===== التحقق ====="
-          grep -rn '"TV ULTRA"\|"ULTRA TV"\|"Ultra TV"' --include="*.kt" . 2>/dev/null | head -5 || echo "لا شيء متبقٍ ✅"
+          echo "===== ما تم تعديله ====="
+          grep -rn '"STTITEN IP TV"' --include="*.kt" . 2>/dev/null | head -5
 
       # ============================================================
-      # 6. إنشاء شعارات جديدة PNG
+      # 4. إنشاء شعارات PNG جديدة
       # ============================================================
       - name: Create logo PNGs
         working-directory: source/android-native
         run: |
           mkdir -p app/src/main/res/drawable-nodpi
           
-          # شعار أفقي
           convert -size 1200x400 xc:transparent \
             -font DejaVu-Sans-Bold -pointsize 110 \
             -fill "#FFFFFF" -gravity center \
             -annotate +0+0 "STTITEN IP TV" \
             app/src/main/res/drawable-nodpi/sttiten_logo.png
           
-          # أيقونة مربعة
           convert -size 512x512 xc:"#0E1116" \
             -font DejaVu-Sans-Bold -pointsize 70 \
             -fill "#FFFFFF" -gravity center \
@@ -174,27 +143,21 @@ jobs:
           ls -la app/src/main/res/drawable-nodpi/
 
       # ============================================================
-      # 7. استبدال ملفات XML للشعارات (بدون لمس banner)
+      # 5. استبدال ملفات XML (بدون لمس banner)
       # ============================================================
       - name: Replace XML logo files
         working-directory: source/android-native
         run: |
-          echo "===== استبدال ملفات XML Vector ====="
-          
           find app/src/main/res/drawable -name "*.xml" | while read f; do
             FILENAME=$(basename "$f")
             
-            # تخطي ملفات banner و telegram
             if echo "$FILENAME" | grep -qiE "banner|telegram"; then
               echo "⏭️ تخطي: $FILENAME"
               continue
             fi
             
-            # فقط الملفات التي تحتوي vector/shape
             if grep -qE "<vector|<shape|<layer-list" "$f" 2>/dev/null; then
-              echo "✅ استبدال: $f"
-              
-              if echo "$FILENAME" | grep -qiE "launcher|icon|ic_launcher"; then
+              if echo "$FILENAME" | grep -qiE "launcher|icon"; then
                 IMG="sttiten_icon"
               else
                 IMG="sttiten_logo"
@@ -209,13 +172,11 @@ jobs:
             fi
           done
           
-          # الأيقونات التكيفية
           find app/src/main/res/mipmap-anydpi-v26 -name "*.xml" 2>/dev/null | while read f; do
             FILENAME=$(basename "$f")
             if echo "$FILENAME" | grep -qi "banner"; then
               continue
             fi
-            echo "✅ استبدال أيقونة تكيفية: $f"
             cat > "$f" << XMLEOF
           <?xml version="1.0" encoding="utf-8"?>
           <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
@@ -228,9 +189,9 @@ jobs:
           echo "✅ تم استبدال ملفات XML"
 
       # ============================================================
-      # 8. دمج المعماريتين في APK واحد
+      # 6. دمج المعماريتين
       # ============================================================
-      - name: Configure universal APK (arm64 + armv7)
+      - name: Configure universal APK
         working-directory: source/android-native
         run: |
           APP_GRADLE="app/build.gradle.kts"
@@ -238,19 +199,11 @@ jobs:
             if ! grep -q 'abiFilters' "$APP_GRADLE"; then
               perl -i -pe 's/(defaultConfig\s*\{)/$1\n        ndk {\n            abiFilters += listOf("arm64-v8a", "armeabi-v7a")\n        }/' "$APP_GRADLE"
             fi
-            
             if ! grep -q 'useLegacyPackaging' "$APP_GRADLE"; then
               perl -i -pe 's/(android\s*\{)/$1\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' "$APP_GRADLE"
             fi
-            
-            echo "===== التحقق ====="
-            grep -n -A 3 "abiFilters" "$APP_GRADLE" | head -8
-            grep -n -A 3 "useLegacyPackaging" "$APP_GRADLE" | head -8
           fi
 
-      # ============================================================
-      # 9. إعدادات Gradle
-      # ============================================================
       - name: Setup Gradle properties
         working-directory: source/android-native
         run: |
@@ -266,7 +219,7 @@ jobs:
         run: chmod +x gradlew
 
       # ============================================================
-      # 10. البناء
+      # 7. البناء
       # ============================================================
       - name: Build APK
         working-directory: source/android-native
@@ -277,12 +230,6 @@ jobs:
         run: |
           echo "===== حجم APK ====="
           find . -name "*.apk" -exec ls -lh {} \;
-          
-          echo ""
-          echo "===== المعماريات المضمنة ====="
-          for apk in $(find . -name "*.apk" | head -1); do
-            unzip -l "$apk" | grep "\.so$" | awk '{print $4}' | grep -oE "lib/[^/]+" | sort -u
-          done
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
