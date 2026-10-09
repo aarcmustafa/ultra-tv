@@ -45,41 +45,44 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: sttiten-mipmap-${{ hashFiles('source/android-native/**/*.gradle*') }}
-          restore-keys: sttiten-mipmap-
+          key: sttiten-split-${{ hashFiles('source/android-native/**/*.gradle*') }}
+          restore-keys: sttiten-split-
 
       # ============================================================
-      # 1. تشخيص: عرض كل ملفات mipmap
+      # 🔍 الخطوة 1: تشخيص دقيق لنص الشريط العلوي
       # ============================================================
-      - name: Diagnostic - List mipmap files
-        working-directory: source/android-native/app/src/main/res
+      - name: Diagnostic - Analyze TopBar text structure
+        working-directory: source/android-native
         run: |
-          echo "===== محتويات mipmap-mdpi ====="
-          ls -la mipmap-mdpi/ 2>/dev/null || echo "غير موجود"
-          echo ""
-          echo "===== محتويات mipmap-hdpi ====="
-          ls -la mipmap-hdpi/ 2>/dev/null || echo "غير موجود"
-          echo ""
-          echo "===== محتويات mipmap-xhdpi ====="
-          ls -la mipmap-xhdpi/ 2>/dev/null || echo "غير موجود"
-          echo ""
-          echo "===== محتويات mipmap-xxhdpi ====="
-          ls -la mipmap-xxhdpi/ 2>/dev/null || echo "غير موجود"
-          echo ""
-          echo "===== محتويات mipmap-xxxhdpi ====="
-          ls -la mipmap-xxxhdpi/ 2>/dev/null || echo "غير موجود"
-          echo ""
-          echo "===== محتويات mipmap-anydpi-v26 ====="
-          ls -la mipmap-anydpi-v26/ 2>/dev/null || echo "غير موجود"
+          TARGET="app/src/main/kotlin/com/ultratv/tv/nativeapp/ui/settings/CloudPairingDialog.kt"
+          
+          echo "===================================================="
+          echo "===== محتوى CloudPairingDialog.kt (الأسطر 60-100) ====="
+          echo "===================================================="
+          sed -n '60,100p' "$TARGET" 2>/dev/null || echo "الملف غير موجود"
           
           echo ""
-          echo "===== محتوى ملفات XML في mipmap-anydpi-v26 ====="
-          for f in mipmap-anydpi-v26/*.xml; do
-            [ -f "$f" ] || continue
-            echo "--- $f ---"
-            cat "$f"
-            echo ""
-          done
+          echo "===================================================="
+          echo "===== هل النص مقسّم؟ ====="
+          echo "===================================================="
+          
+          if grep -qE 'Text\("ULTRA"\)|Text\("ULTRA",' "$TARGET" 2>/dev/null; then
+            echo "🔴 وجدت: Text(\"ULTRA\") منفصل"
+          fi
+          
+          if grep -qE 'Text\("TV"\)|Text\("TV",' "$TARGET" 2>/dev/null; then
+            echo "🔴 وجدت: Text(\"TV\") منفصل"
+          fi
+          
+          if grep -qE '"ULTRA TV"|"Ultra TV"|"TV ULTRA"|"UTV"' "$TARGET" 2>/dev/null; then
+            echo "🔴 وجدت: نص كامل في Text واحد"
+          fi
+          
+          echo ""
+          echo "===================================================="
+          echo "===== كل الأسطر التي تحتوي ULTRA/TV/UTV في الملف ====="
+          echo "===================================================="
+          grep -nE '"ULTRA"|"TV"|"Ultra"|"UTV"' "$TARGET" 2>/dev/null | head -20
 
       # ============================================================
       # 2. تغيير اسم التطبيق والمطور
@@ -106,218 +109,106 @@ jobs:
           echo "✅ تم تغيير الاسم"
 
       # ============================================================
-      # 3. استبدال النصوص في Kotlin
+      # 3. 🔥 معالجة الشريط العلوي - تدعم الحالتين
       # ============================================================
-      - name: Replace brand in Kotlin files
+      - name: Smart fix TopBar text (both cases)
+        working-directory: source/android-native
+        run: |
+          TARGET="app/src/main/kotlin/com/ultratv/tv/nativeapp/ui/settings/CloudPairingDialog.kt"
+          
+          if [ ! -f "$TARGET" ]; then
+            echo "⚠️ الملف غير موجود: $TARGET"
+            exit 0
+          fi
+          
+          echo "===== قبل المعالجة ====="
+          grep -nE 'Text\("(ULTRA|TV|Ultra|UTV)' "$TARGET" | head -10 || echo "لا توجد سطور مطابقة"
+          
+          # ============================================
+          # الحالة 1: النص الكامل في Text واحد
+          # ============================================
+          if grep -qE '"ULTRA TV"|"Ultra TV"|"TV ULTRA"|"UTV"' "$TARGET"; then
+            echo ""
+            echo "🔵 الحالة 1 مكتشفة: نص كامل في Text واحد"
+            
+            sed -i 's|"ULTRA TV"|"STTITEN IP TV"|g' "$TARGET"
+            sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$TARGET"
+            sed -i 's|"TV ULTRA"|"STTITEN IP TV"|g' "$TARGET"
+            sed -i 's|"UTV"|"STTITEN IP TV"|g' "$TARGET"
+            
+            # إزالة letterSpacing الغريب
+            sed -i 's|letterSpacing = TextUnit(1\.7f, TextUnitType\.Sp)|letterSpacing = TextUnit(0f, TextUnitType.Sp)|g' "$TARGET"
+            sed -i 's|letterSpacing = TextUnit(1\.7f,.*Sp)|letterSpacing = TextUnit(0f, TextUnitType.Sp)|g' "$TARGET"
+            
+            echo "✅ تم استبدال النص الكامل + إزالة letterSpacing"
+          fi
+          
+          # ============================================
+          # الحالة 2: النص مقسّم (Text("ULTRA") + Text("TV"))
+          # ============================================
+          HAS_ULTRA=$(grep -cE 'Text\("ULTRA"\)|Text\("ULTRA",' "$TARGET" 2>/dev/null)
+          HAS_TV=$(grep -cE 'Text\("TV"\)|Text\("TV",' "$TARGET" 2>/dev/null)
+          
+          if [ "$HAS_ULTRA" -gt 0 ] && [ "$HAS_TV" -gt 0 ]; then
+            echo ""
+            echo "🔵 الحالة 2 مكتشفة: النص مقسّم"
+            echo "   عدد Text(\"ULTRA\"): $HAS_ULTRA"
+            echo "   عدد Text(\"TV\"): $HAS_TV"
+            
+            # الاستراتيجية:
+            # - نستبدل الأول بالاسم الكامل
+            # - نستبدل الثاني بنص فارغ
+            # - هذا يضمن عدم وجود تكرار
+            
+            # الاستبدال 1: Text("ULTRA") → Text("STTITEN IP TV")
+            sed -i 's|Text("ULTRA")|Text("STTITEN IP TV")|g' "$TARGET"
+            sed -i 's|Text("ULTRA",|Text("STTITEN IP TV",|g' "$TARGET"
+            
+            # الاستبدال 2: Text("TV") → Text("")
+            sed -i 's|Text("TV")|Text("")|g' "$TARGET"
+            sed -i 's|Text("TV",|Text("",|g' "$TARGET"
+            
+            echo "✅ تم استبدال النص المقسّم"
+          fi
+          
+          # ============================================
+          # الحالة 3: نص في متغير (val title = "ULTRA TV")
+          # ============================================
+          if grep -qE '=\s*"ULTRA TV"|=\s*"Ultra TV"' "$TARGET"; then
+            echo ""
+            echo "🔵 الحالة 3 مكتشفة: النص في متغير"
+            sed -i 's|=\s*"ULTRA TV"|= "STTITEN IP TV"|g' "$TARGET"
+            sed -i 's|=\s*"Ultra TV"|= "STTITEN IP TV"|g' "$TARGET"
+            echo "✅ تم"
+          fi
+          
+          # ============================================
+          # الحالة 4: استبدال احتياطي شامل (أي "ULTRA" أو "TV" متبقي)
+          # ============================================
+          # في حالات نادرة، قد يكون النص في سطر واحد لكن بأشكال مختلفة
+          # لا نستبدل كل "TV" لأن كلمة TV تظهر في كلمات أخرى مثل Live TV
+          
+          echo ""
+          echo "===== بعد المعالجة ====="
+          sed -n '60,100p' "$TARGET"
+
+      # ============================================================
+      # 4. استبدال احتياطي شامل في كل ملفات Kotlin
+      # ============================================================
+      - name: Global replace in all Kotlin
         working-directory: source/android-native
         run: |
           find . -name "*.kt" -not -path "*/build/*" | while read f; do
             sed -i 's|"ULTRA TV"|"STTITEN IP TV"|g' "$f"
             sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$f"
+            sed -i 's|"TV ULTRA"|"STTITEN IP TV"|g' "$f"
+            sed -i 's|"UltraTV"|"STTITEN IP TV"|g' "$f"
             sed -i 's|"UTV"|"STTITEN IP TV"|g' "$f"
           done
-          echo "✅ تم"
+          echo "✅ تم الاستبدال الشامل"
 
       # ============================================================
-      # 4. 🔥 إنشاء صور جديدة لمجلدات mipmap
-      # ============================================================
-      - name: Generate new icon PNGs for each mipmap density
-        working-directory: source/android-native/app/src/main/res
-        run: |
-          # الألوان
-          BG="#0E1116"
-          FG="#FFFFFF"
-          ACCENT="#FF3A2F"
-          
-          # ============================================
-          # mipmap-mdpi → 48×48
-          # ============================================
-          echo "===== mipmap-mdpi (48×48) ====="
-          mkdir -p mipmap-mdpi
-          convert -size 48x48 xc:"$BG" \
-            -font DejaVu-Sans-Bold -pointsize 24 \
-            -fill "$FG" -gravity center \
-            -annotate +0+0 "S" \
-            mipmap-mdpi/ic_launcher.png
-          
-          convert -size 48x48 xc:"$BG" \
-            -font DejaVu-Sans-Bold -pointsize 24 \
-            -fill "$FG" -gravity center \
-            -annotate +0+0 "S" \
-            mipmap-mdpi/ic_launcher_round.png 2>/dev/null || true
-          
-          # ============================================
-          # mipmap-hdpi → 72×72
-          # ============================================
-          echo "===== mipmap-hdpi (72×72) ====="
-          mkdir -p mipmap-hdpi
-          convert -size 72x72 xc:"$BG" \
-            -font DejaVu-Sans-Bold -pointsize 32 \
-            -fill "$FG" -gravity center \
-            -annotate +0+0 "ST" \
-            mipmap-hdpi/ic_launcher.png
-          
-          convert -size 72x72 xc:"$BG" \
-            -font DejaVu-Sans-Bold -pointsize 32 \
-            -fill "$FG" -gravity center \
-            -annotate +0+0 "ST" \
-            mipmap-hdpi/ic_launcher_round.png 2>/dev/null || true
-          
-          # ============================================
-          # mipmap-xhdpi → 96×96
-          # ============================================
-          echo "===== mipmap-xhdpi (96×96) ====="
-          mkdir -p mipmap-xhdpi
-          convert -size 96x96 xc:"$BG" \
-            -font DejaVu-Sans-Bold -pointsize 42 \
-            -fill "$FG" -gravity center \
-            -annotate +0+0 "STT" \
-            mipmap-xhdpi/ic_launcher.png
-          
-          convert -size 96x96 xc:"$BG" \
-            -font DejaVu-Sans-Bold -pointsize 42 \
-            -fill "$FG" -gravity center \
-            -annotate +0+0 "STT" \
-            mipmap-xhdpi/ic_launcher_round.png 2>/dev/null || true
-          
-          # ============================================
-          # mipmap-xxhdpi → 144×144
-          # ============================================
-          echo "===== mipmap-xxhdpi (144×144) ====="
-          mkdir -p mipmap-xxhdpi
-          convert -size 144x144 xc:"$BG" \
-            -font DejaVu-Sans-Bold -pointsize 60 \
-            -fill "$FG" -gravity center \
-            -annotate +0+0 "STT" \
-            mipmap-xxhdpi/ic_launcher.png
-          
-          convert -size 144x144 xc:"$BG" \
-            -font DejaVu-Sans-Bold -pointsize 60 \
-            -fill "$FG" -gravity center \
-            -annotate +0+0 "STT" \
-            mipmap-xxhdpi/ic_launcher_round.png 2>/dev/null || true
-          
-          # ============================================
-          # mipmap-xxxhdpi → 192×192
-          # ============================================
-          echo "===== mipmap-xxxhdpi (192×192) ====="
-          mkdir -p mipmap-xxxhdpi
-          convert -size 192x192 xc:"$BG" \
-            -font DejaVu-Sans-Bold -pointsize 80 \
-            -fill "$FG" -gravity center \
-            -annotate +0+0 "STT" \
-            mipmap-xxxhdpi/ic_launcher.png
-          
-          convert -size 192x192 xc:"$BG" \
-            -font DejaVu-Sans-Bold -pointsize 80 \
-            -fill "$FG" -gravity center \
-            -annotate +0+0 "STT" \
-            mipmap-xxxhdpi/ic_launcher_round.png 2>/dev/null || true
-          
-          # ============================================
-          # إنشاء نسخة كبيرة من الشعار في drawable-nodpi
-          # ============================================
-          echo "===== drawable-nodpi (شعار كامل) ====="
-          mkdir -p drawable-nodpi
-          
-          # شعار أفقي كامل
-          convert -size 1280x400 xc:transparent \
-            -font DejaVu-Sans-Bold -pointsize 120 \
-            -fill "$FG" -gravity center \
-            -annotate +0+0 "STTITEN IP TV" \
-            drawable-nodpi/sttiten_full_logo.png
-          
-          # شعار مربع بجودة عالية
-          convert -size 512x512 xc:"$BG" \
-            -font DejaVu-Sans-Bold -pointsize 90 \
-            -fill "$FG" -gravity center \
-            -annotate +0+0 "STTITEN" \
-            -pointsize 50 -annotate +0+80 "IP TV" \
-            drawable-nodpi/sttiten_icon.png
-          
-          echo ""
-          echo "===== جميع الصور التي تم إنشاؤها ====="
-          find . -name "*.png" -newer /tmp -mmin -2 2>/dev/null | head -30
-          ls -la mipmap-mdpi/ mipmap-hdpi/ mipmap-xhdpi/ mipmap-xxhdpi/ mipmap-xxxhdpi/
-
-      # ============================================================
-      # 5. 🔥 تعديل ملفات XML في mipmap-anydpi-v26 للربط بالأيقونات الجديدة
-      # ============================================================
-      - name: Update adaptive icons in mipmap-anydpi-v26
-        working-directory: source/android-native/app/src/main/res
-        run: |
-          echo "===== قبل التعديل ====="
-          for f in mipmap-anydpi-v26/*.xml; do
-            [ -f "$f" ] || continue
-            echo "--- $f ---"
-            cat "$f"
-            echo ""
-          done
-          
-          echo "===== استبدال محتوى XML ====="
-          for f in mipmap-anydpi-v26/*.xml; do
-            [ -f "$f" ] || continue
-            FILENAME=$(basename "$f")
-            
-            # تخطي أي ملف banner
-            if echo "$FILENAME" | grep -qi "banner"; then
-              echo "⏭️ تخطي: $FILENAME"
-              continue
-            fi
-            
-            echo "✅ تعديل: $FILENAME"
-            cat > "$f" << 'XMLEOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-              <background android:drawable="@color/ic_launcher_background" />
-              <foreground android:drawable="@mipmap/ic_launcher_foreground" />
-          </adaptive-icon>
-          XMLEOF
-          done
-          
-          # إنشاء ic_launcher_foreground.png في mipmap-xxxhdpi
-          convert -size 432x432 xc:transparent \
-            -font DejaVu-Sans-Bold -pointsize 90 \
-            -fill "#FFFFFF" -gravity center \
-            -annotate +0+0 "STTITEN" \
-            -pointsize 50 -annotate +0+80 "IP TV" \
-            mipmap-xxxhdpi/ic_launcher_foreground.png
-          
-          echo ""
-          echo "===== التحقق النهائي ====="
-          for f in mipmap-anydpi-v26/*.xml; do
-            [ -f "$f" ] || continue
-            echo "--- $f ---"
-            head -5 "$f"
-          done
-
-      # ============================================================
-      # 6. إضافة لون الخلفية للأيقونة التكيفية
-      # ============================================================
-      - name: Add ic_launcher_background color
-        working-directory: source/android-native/app/src/main/res
-        run: |
-          mkdir -p values
-          COLORS_FILE="values/colors.xml"
-          
-          if [ ! -f "$COLORS_FILE" ]; then
-            cat > "$COLORS_FILE" << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-          </resources>
-          EOF
-          fi
-          
-          # إضافة اللون إذا لم يكن موجوداً
-          if ! grep -q "ic_launcher_background" "$COLORS_FILE"; then
-            sed -i 's|</resources>|    <color name="ic_launcher_background">#0E1116</color>\n</resources>|' "$COLORS_FILE"
-          fi
-          
-          echo "===== colors.xml ====="
-          cat "$COLORS_FILE"
-
-      # ============================================================
-      # 7. دمج المعماريتين
+      # 5. دمج المعماريتين
       # ============================================================
       - name: Configure universal APK
         working-directory: source/android-native
@@ -347,27 +238,21 @@ jobs:
         run: chmod +x gradlew
 
       # ============================================================
-      # 8. البناء
+      # 6. البناء
       # ============================================================
       - name: Build APK
         working-directory: source/android-native
         run: ./gradlew assembleDebug --stacktrace --no-daemon --no-parallel
 
-      - name: Show result
+      - name: Show APK
         working-directory: source/android-native
         run: |
           echo "===== حجم APK ====="
           find . -name "*.apk" -exec ls -lh {} \;
-          
-          echo ""
-          echo "===== الأيقونات المُضمَّنة في APK ====="
-          for apk in $(find . -name "*.apk" | head -1); do
-            unzip -l "$apk" | grep -E "ic_launcher|sttiten" | head -20
-          done
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: STTITEN-IP-TV-Universal
+          name: STTITEN-IP-TV
           path: 'source/android-native/**/*.apk'
           if-no-files-found: error
