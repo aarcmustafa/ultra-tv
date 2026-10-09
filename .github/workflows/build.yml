@@ -42,8 +42,8 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: sttiten-switch-${{ hashFiles('source/android-native/**/*.gradle*') }}
-          restore-keys: sttiten-switch-
+          key: sttiten-v6-${{ hashFiles('source/android-native/**/*.gradle*') }}
+          restore-keys: sttiten-v6-
 
       - name: Diagnostic - Find .ts builder
         working-directory: source/android-native
@@ -54,6 +54,8 @@ jobs:
           grep -rn '\.ts"\|\.ts'"'" --include="*.kt" . 2>/dev/null | grep -v "*/test/*" | head -20 || echo "none"
           echo "===== Files with /live/ ====="
           grep -rln '/live/' --include="*.kt" . 2>/dev/null | grep -v "*/test/*" | head -10 || echo "none"
+          echo "===== build.gradle files in app ====="
+          find app -maxdepth 2 -name "build.gradle*" 2>/dev/null
 
       - name: Change app name and developer
         working-directory: source/android-native
@@ -62,6 +64,7 @@ jobs:
             sed -i 's|<string name="app_name">[^<]*</string>|<string name="app_name">STTITEN IP TV</string>|g' "$f"
             sed -i 's|>UTV<|>STTITEN IP TV<|g' "$f"
             sed -i 's|>Ultra TV<|>STTITEN IP TV<|g' "$f"
+            sed -i 's|>ULTRA TV<|>STTITEN IP TV<|g' "$f"
           done
           mkdir -p app/src/main/res/values-ar
           cat > app/src/main/res/values-ar/strings.xml << 'EOF'
@@ -69,18 +72,32 @@ jobs:
           <resources>
               <string name="app_name">STTITEN IP TV</string>
               <string name="developer_name">جلولي مصطفى</string>
+              <string name="developer_name_latin">Djellouli Mustafa</string>
           </resources>
           EOF
           echo "done"
 
-      - name: Fix TopBar
+      - name: Fix TopBar text
         working-directory: source/android-native
         run: |
-          T="app/src/main/kotlin/com/ultratv/tv/nativeapp/ui/settings/CloudPairingDialog.kt"
-          if [ -f "$T" ]; then
-            sed -i 's|"ULTRA TV"|"STTITEN IP TV"|g' "$T"
-            sed -i 's|letterSpacing = TextUnit(1\.7f, TextUnitType\.Sp)|letterSpacing = TextUnit(0f, TextUnitType.Sp)|g' "$T"
+          TARGET="app/src/main/kotlin/com/ultratv/tv/nativeapp/ui/settings/CloudPairingDialog.kt"
+          if [ -f "$TARGET" ]; then
+            sed -i 's|"ULTRA TV"|"STTITEN IP TV"|g' "$TARGET"
+            sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$TARGET"
+            sed -i 's|"UTV"|"STTITEN IP TV"|g' "$TARGET"
+            sed -i 's|letterSpacing = TextUnit(1\.7f, TextUnitType\.Sp)|letterSpacing = TextUnit(0f, TextUnitType.Sp)|g' "$TARGET"
           fi
+
+      - name: Global replace in Kotlin
+        working-directory: source/android-native
+        run: |
+          find . -name "*.kt" -not -path "*/build/*" | while read f; do
+            sed -i 's|"ULTRA TV"|"STTITEN IP TV"|g' "$f"
+            sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$f"
+            sed -i 's|"UltraTV"|"STTITEN IP TV"|g' "$f"
+            sed -i 's|"UTV"|"STTITEN IP TV"|g' "$f"
+          done
+          echo "done"
 
       - name: Create StreamPref helper
         working-directory: source/android-native
@@ -112,7 +129,7 @@ jobs:
           KOTLIN_EOF
           echo "StreamPref created"
 
-      - name: Create QR Server file (with extension selector)
+      - name: Create QR Server file
         working-directory: source/android-native
         run: |
           PKG="app/src/main/kotlin/com/ultratv/tv/nativeapp/qr"
@@ -145,7 +162,7 @@ jobs:
           <option value="m3u">رابط M3U / M3U8</option>
           </select>
           <div id="xf">
-          <label>عنوان السيرفر:</label><input type="text" name="serverUrl" placeholder="http://example.com:8080">
+          <label>عنوان السيرفر:</label><input type="text" name="serverUrl">
           <label>اسم المستخدم:</label><input type="text" name="username">
           <label>كلمة المرور:</label><input type="password" name="password">
           </div>
@@ -160,7 +177,7 @@ jobs:
           <option value="" ${if(current=="")"selected" else ""}>بدون امتداد</option>
           </select>
           <div class="hint">إذا لم تعمل القنوات، جرب امتداداً آخر</div>
-          <button type="submit">حفظ وإرسال</button>
+          <button type="submit">حفظ</button>
           </form>
           <script>function tf(){var t=document.getElementById('tsel').value;document.getElementById('xf').classList.toggle('hidden',t!=='xtream');document.getElementById('mf').classList.toggle('hidden',t!=='m3u');}</script>
           </body></html>
@@ -185,7 +202,7 @@ jobs:
                   val ext = params["streamExt"]?.firstOrNull() ?: "m3u8"
                   StreamPref.setExt(context, ext)
                   ed.apply()
-                  return newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", "<h1 style='color:green;text-align:center;padding:40px;background:#0E1116'>تم الحفظ</h1>")
+                  return newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", "<h1 style='color:green;text-align:center;padding:40px;background:#0E1116'>Saved</h1>")
               }
               fun getLocalIp(): String {
                   val interfaces = NetworkInterface.getNetworkInterfaces()
@@ -259,16 +276,25 @@ jobs:
           fi
           echo "manifest updated"
 
-      - name: Add QR dependencies
+      - name: Add QR dependencies (robust)
         working-directory: source/android-native
         run: |
-          B="app/build.gradle.kts"
-          if [ -f "$B" ]; then
-            if ! grep -q 'zxing' "$B"; then
-              sed -i 's|dependencies {|dependencies {\n    implementation("com.google.zxing:core:3.5.3")\n    implementation("org.nanohttpd:nanohttpd:2.3.1")|' "$B"
+          for B in "app/build.gradle.kts" "app/build.gradle"; do
+            if [ -f "$B" ]; then
+              echo "=== Found: $B ==="
+              if ! grep -q 'zxing' "$B"; then
+                if grep -qE '^dependencies\s*\{' "$B"; then
+                  perl -i -pe 's/(^dependencies\s*\{)/$1\n    implementation("com.google.zxing:core:3.5.3")\n    implementation("org.nanohttpd:nanohttpd:2.3.1")/' "$B"
+                  echo "Added via perl"
+                else
+                  printf "\ndependencies {\n    implementation(\"com.google.zxing:core:3.5.3\")\n    implementation(\"org.nanohttpd:nanohttpd:2.3.1\")\n}\n" >> "$B"
+                  echo "Added at end"
+                fi
+              fi
+              echo "=== Verify ==="
+              grep -n "zxing\|nanohttpd" "$B" || echo "Not found"
             fi
-          fi
-          echo "deps added"
+          done
 
       - name: Configure universal APK
         working-directory: source/android-native
