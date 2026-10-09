@@ -36,16 +36,38 @@ jobs:
       - name: Install Android SDK components
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0" || true
 
+      - name: Install ImageMagick
+        run: sudo apt-get update -qq && sudo apt-get install -y imagemagick fonts-dejavu
+
       - name: Cache Gradle
         uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: sttiten-final-${{ hashFiles('source/android-native/**/*.gradle*') }}
-          restore-keys: sttiten-final-
+          key: sttiten-xml-${{ hashFiles('source/android-native/**/*.gradle*') }}
+          restore-keys: sttiten-xml-
 
-      # 1. تغيير اسم التطبيق واسم المطور
+      # 🔍 الخطوة 1: تشخيص - عرض كل ملفات XML و PNG
+      - name: Diagnostic - List all XML and PNG in drawable
+        working-directory: source/android-native
+        run: |
+          echo "===== ملفات PNG (لن نلمسها) ====="
+          find app/src/main/res -name "*.png" \( -path "*/drawable*/*" -o -path "*/mipmap*/*" \) | sort
+          
+          echo ""
+          echo "===== ملفات XML في drawable (سنعدّلها) ====="
+          find app/src/main/res -name "*.xml" -path "*/drawable/*" | sort
+          
+          echo ""
+          echo "===== ملفات XML في mipmap-anydpi-v26 ====="
+          find app/src/main/res -name "*.xml" -path "*/mipmap-anydpi-v26/*" | sort
+          
+          echo ""
+          echo "===== البحث عن أي ملف يشير إلى banner.png ====="
+          grep -rln "banner.png\|@drawable/banner\|R.drawable.banner" app/src/main/res app/src/main/java 2>/dev/null | head -10
+
+      # 2. تغيير الاسم والمطور
       - name: Change app name and developer
         working-directory: source/android-native
         run: |
@@ -72,10 +94,95 @@ jobs:
               <string name="developer_name_latin">Djellouli Mustafa</string>
           </resources>
           EOF
-          echo "✅ تم تغيير الاسم والمطور"
 
-      # 2. دمج المعماريتين في APK واحد
-      - name: Configure universal APK (arm64 + armv7)
+      # 🎨 الخطوة 2: إنشاء صورة sttiten_logo.png (صورة جديدة، لا نلمس القديمة)
+      - name: Create sttiten_logo.png
+        working-directory: source/android-native
+        run: |
+          mkdir -p app/src/main/res/drawable-nodpi
+          
+          # صورة أفقية (للسبلاش والبوكس)
+          convert -size 1200x400 xc:transparent \
+            -font DejaVu-Sans-Bold -pointsize 110 \
+            -fill "#FFFFFF" -gravity center \
+            -annotate +0+0 "STTITEN IP TV" \
+            app/src/main/res/drawable-nodpi/sttiten_logo.png
+          
+          # أيقونة مربعة (للأيقونة)
+          convert -size 512x512 xc:"#0E1116" \
+            -font DejaVu-Sans-Bold -pointsize 70 \
+            -fill "#FFFFFF" -gravity center \
+            -annotate +0+0 "STTITEN\nIP TV" \
+            app/src/main/res/drawable-nodpi/sttiten_icon.png
+          
+          ls -la app/src/main/res/drawable-nodpi/
+
+      # 🔥 الخطوة 3: استبدال ملفات XML للشعارات (بدون لمس banner)
+      - name: Replace XML logo files
+        working-directory: source/android-native
+        run: |
+          echo "===== البدء في استبدال ملفات XML ====="
+          
+          # نبحث عن جميع ملفات XML في drawable
+          find app/src/main/res/drawable -name "*.xml" | while read f; do
+            
+            FILENAME=$(basename "$f")
+            
+            # تخطي أي ملف له علاقة بـ banner (حسب طلبك)
+            if echo "$FILENAME" | grep -qi "banner"; then
+              echo "⏭️ تخطي (banner): $FILENAME"
+              continue
+            fi
+            
+            # هل الملف vector/shape/layer-list؟ (شعار)
+            if grep -qE "<vector|<shape|<layer-list" "$f" 2>/dev/null; then
+              echo "✅ استبدال: $f"
+              
+              # اختر الصورة المناسبة
+              if echo "$FILENAME" | grep -qiE "launcher|icon|ic_launcher"; then
+                IMG="sttiten_icon"
+              else
+                IMG="sttiten_logo"
+              fi
+              
+              # استبدال المحتوى بـ bitmap يشير إلى الصورة الجديدة
+              cat > "$f" << XMLEOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+              android:src="@drawable/$IMG"
+              android:gravity="center" />
+          XMLEOF
+            fi
+          done
+          
+          # نستبدل أيضاً ملفات XML في mipmap-anydpi-v26 (أيقونة تكيفية)
+          find app/src/main/res/mipmap-anydpi-v26 -name "*.xml" 2>/dev/null | while read f; do
+            FILENAME=$(basename "$f")
+            
+            if echo "$FILENAME" | grep -qi "banner"; then
+              continue
+            fi
+            
+            echo "✅ استبدال أيقونة تكيفية: $f"
+            cat > "$f" << XMLEOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/black" />
+              <foreground android:drawable="@drawable/sttiten_icon" />
+          </adaptive-icon>
+          XMLEOF
+          done
+          
+          echo ""
+          echo "===== ملفات XML بعد التعديل ====="
+          find app/src/main/res/drawable -name "*.xml" | while read f; do
+            echo "--- $f ---"
+            head -5 "$f"
+            echo ""
+          done
+
+      # 4. دمج المعماريتين
+      - name: Configure universal APK
         working-directory: source/android-native
         run: |
           APP_GRADLE="app/build.gradle.kts"
@@ -83,16 +190,12 @@ jobs:
             if ! grep -q 'abiFilters' "$APP_GRADLE"; then
               perl -i -pe 's/(defaultConfig\s*\{)/$1\n        ndk {\n            abiFilters += listOf("arm64-v8a", "armeabi-v7a")\n        }/' "$APP_GRADLE"
             fi
-            
             if ! grep -q 'useLegacyPackaging' "$APP_GRADLE"; then
               perl -i -pe 's/(android\s*\{)/$1\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' "$APP_GRADLE"
             fi
-            
-            echo "===== بعد التعديل ====="
-            grep -n -A 3 "abiFilters" "$APP_GRADLE" | head -8
           fi
 
-      # 3. إعدادات Gradle
+      # 5. إعدادات Gradle
       - name: Setup Gradle properties
         working-directory: source/android-native
         run: |
@@ -107,21 +210,16 @@ jobs:
         working-directory: source/android-native
         run: chmod +x gradlew
 
-      # 4. البناء
+      # 6. البناء
       - name: Build APK
         working-directory: source/android-native
         run: ./gradlew assembleDebug --stacktrace --no-daemon --no-parallel
 
-      - name: Show APK info
+      - name: Show result
         working-directory: source/android-native
         run: |
-          echo "===== الحجم ====="
+          echo "===== حجم APK ====="
           find . -name "*.apk" -exec ls -lh {} \;
-          echo ""
-          echo "===== المعماريات ====="
-          for apk in $(find . -name "*.apk" | head -1); do
-            unzip -l "$apk" | grep "\.so$" | awk '{print $4}' | grep -oE "lib/[^/]+" | sort -u
-          done
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
