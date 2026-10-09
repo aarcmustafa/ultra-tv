@@ -42,14 +42,8 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: sttiten-ext-${{ hashFiles('source/android-native/**/*.gradle*') }}
-          restore-keys: sttiten-ext-
-
-      - name: Remove any existing QR files
-        working-directory: source/android-native
-        run: |
-          rm -rf app/src/main/kotlin/com/ultratv/tv/nativeapp/qr
-          echo "QR files removed"
+          key: sttiten-ext2-${{ hashFiles('source/android-native/**/*.gradle*') }}
+          restore-keys: sttiten-ext2-
 
       - name: Change app name and developer
         working-directory: source/android-native
@@ -93,6 +87,9 @@ jobs:
           done
           echo "done"
 
+      # ============================================================
+      # 1. إنشاء StreamPref مع getSuffix()
+      # ============================================================
       - name: Create StreamPref helper
         working-directory: source/android-native
         run: |
@@ -101,51 +98,70 @@ jobs:
           cat > "$PKG/StreamPref.kt" << 'KOTLIN_EOF'
           package com.ultratv.tv.nativeapp.ext
           import android.content.Context
-          import android.net.Uri
           object StreamPref {
               private const val PREFS = "sttiten_ext"
               private const val KEY = "stream_ext"
               private const val DEFAULT = "m3u8"
-              private var appCtx: Context? = null
+              @Volatile private var appCtx: Context? = null
+              @Volatile private var cached: String? = null
               fun init(context: Context) {
-                  appCtx = context.applicationContext
+                  if (appCtx == null) {
+                      appCtx = context.applicationContext
+                  }
               }
               fun getExt(): String {
+                  cached?.let { return it }
                   val c = appCtx ?: return DEFAULT
-                  return c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                  val v = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                       .getString(KEY, DEFAULT) ?: DEFAULT
+                  cached = v
+                  return v
+              }
+              fun getSuffix(): String {
+                  val ext = getExt()
+                  return if (ext.isEmpty()) "" else ".$ext"
               }
               fun setExt(ext: String) {
+                  cached = ext
                   val c = appCtx ?: return
                   c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                       .edit().putString(KEY, ext).apply()
-              }
-              fun applyTo(uri: Uri): Uri {
-                  val ext = getExt()
-                  if (ext.isEmpty()) return uri
-                  val path = uri.lastPathSegment ?: return uri
-                  if (!path.contains(".")) return uri
-                  val base = path.substringBeforeLast('.')
-                  val newPath = "$base.$ext"
-                  return uri.buildUpon()
-                      .path(uri.path?.substringBeforeLast('/') + "/" + newPath)
-                      .build()
-              }
-              fun applyTo(url: String): String {
-                  val ext = getExt()
-                  if (ext.isEmpty()) return url
-                  val questionMark = url.indexOf('?')
-                  val base = if (questionMark > 0) url.substring(0, questionMark) else url
-                  val query = if (questionMark > 0) url.substring(questionMark) else ""
-                  if (!base.contains(".")) return url
-                  val noExt = base.substringBeforeLast('.')
-                  return "$noExt.$ext$query"
               }
           }
           KOTLIN_EOF
           echo "StreamPref created"
 
-      - name: Create Stream Settings Activity
+      # ============================================================
+      # 2. ContentProvider للتهيئة التلقائية
+      # ============================================================
+      - name: Create StreamPrefInitProvider
+        working-directory: source/android-native
+        run: |
+          PKG="app/src/main/kotlin/com/ultratv/tv/nativeapp/ext"
+          cat > "$PKG/StreamPrefInitProvider.kt" << 'KOTLIN_EOF'
+          package com.ultratv.tv.nativeapp.ext
+          import android.content.ContentProvider
+          import android.content.ContentValues
+          import android.database.Cursor
+          import android.net.Uri
+          class StreamPrefInitProvider : ContentProvider() {
+              override fun onCreate(): Boolean {
+                  context?.let { StreamPref.init(it) }
+                  return true
+              }
+              override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor? = null
+              override fun getType(uri: Uri): String? = null
+              override fun insert(uri: Uri, values: ContentValues?): Uri? = null
+              override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int = 0
+              override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?): Int = 0
+          }
+          KOTLIN_EOF
+          echo "StreamPrefInitProvider created"
+
+      # ============================================================
+      # 3. شاشة الإعدادات
+      # ============================================================
+      - name: Create StreamSettingsActivity
         working-directory: source/android-native
         run: |
           PKG="app/src/main/kotlin/com/ultratv/tv/nativeapp/ext"
@@ -158,47 +174,57 @@ jobs:
           import android.view.Gravity
           import android.widget.Button
           import android.widget.LinearLayout
+          import android.widget.ScrollView
           import android.widget.TextView
           class StreamSettingsActivity : Activity() {
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   StreamPref.init(this)
+                  val scroll = ScrollView(this).apply { setBackgroundColor(Color.parseColor("#0E1116")) }
                   val layout = LinearLayout(this).apply {
                       orientation = LinearLayout.VERTICAL
-                      gravity = Gravity.CENTER
-                      setBackgroundColor(Color.parseColor("#0E1116"))
-                      setPadding(40, 40, 40, 40)
+                      gravity = Gravity.CENTER_HORIZONTAL
+                      setPadding(60, 60, 60, 60)
                   }
+                  scroll.addView(layout)
                   layout.addView(TextView(this).apply {
                       text = "STTITEN IP TV"
                       setTextColor(Color.parseColor("#FF3A2F"))
-                      setTextSize(TypedValue.COMPLEX_UNIT_SP, 36f)
+                      setTextSize(TypedValue.COMPLEX_UNIT_SP, 42f)
                       gravity = Gravity.CENTER
                   })
                   layout.addView(TextView(this).apply {
-                      text = "اختر امتداد البث"
+                      text = "إعدادات امتداد البث المباشر"
                       setTextColor(Color.WHITE)
-                      setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+                      setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
                       gravity = Gravity.CENTER
-                      setPadding(0, 30, 0, 20)
+                      setPadding(0, 30, 0, 10)
+                  })
+                  layout.addView(TextView(this).apply {
+                      text = "إذا لم تعمل القنوات، جرب امتداداً مختلفاً"
+                      setTextColor(Color.parseColor("#888888"))
+                      setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                      gravity = Gravity.CENTER
+                      setPadding(0, 0, 0, 40)
                   })
                   val current = StreamPref.getExt()
                   val options = listOf(
-                      "m3u8" to "m3u8 (موصى به)",
-                      "ts" to "ts (تقليدي)",
+                      "m3u8" to "m3u8  (موصى به)",
+                      "ts" to "ts  (تقليدي)",
                       "m3u" to "m3u",
                       "" to "بدون امتداد"
                   )
                   for ((value, label) in options) {
                       val isCurrent = (value == current)
                       layout.addView(Button(this).apply {
-                          text = if (isCurrent) "✓ $label" else label
+                          text = if (isCurrent) "✓  $label" else label
                           setTextColor(Color.WHITE)
+                          setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
                           setBackgroundColor(
                               if (isCurrent) Color.parseColor("#FF3A2F")
                               else Color.parseColor("#1A1D23")
                           )
-                          setPadding(30, 25, 30, 25)
+                          setPadding(40, 30, 40, 30)
                           setOnClickListener {
                               StreamPref.setExt(value)
                               recreate()
@@ -206,61 +232,70 @@ jobs:
                           layoutParams = LinearLayout.LayoutParams(
                               LinearLayout.LayoutParams.MATCH_PARENT,
                               LinearLayout.LayoutParams.WRAP_CONTENT
-                          ).apply { topMargin = 12 }
+                          ).apply { topMargin = 15 }
                       })
                   }
                   layout.addView(TextView(this).apply {
                       text = "الإعداد الحالي: $current"
-                      setTextColor(Color.parseColor("#888888"))
-                      setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                      setTextColor(Color.parseColor("#FF3A2F"))
+                      setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
                       gravity = Gravity.CENTER
-                      setPadding(0, 30, 0, 0)
+                      setPadding(0, 40, 0, 0)
                   })
-                  setContentView(layout)
+                  setContentView(scroll)
               }
           }
           KOTLIN_EOF
           echo "StreamSettingsActivity created"
 
-      - name: Register Stream Settings Activity in Manifest
+      # ============================================================
+      # 4. تسجيل Provider و Activity في المانيفست
+      # ============================================================
+      - name: Register in Manifest
         working-directory: source/android-native
         run: |
           MANIFEST="app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ]; then
-            if ! grep -q "StreamSettingsActivity" "$MANIFEST"; then
-              perl -i -pe 's|(</application>)|    <activity\n        android:name="com.ultratv.tv.nativeapp.ext.StreamSettingsActivity"\n        android:exported="true"\n        android:label="STTITEN Settings">\n        <intent-filter>\n            <action android:name="android.intent.action.MAIN" />\n            <category android:name="android.intent.category.LEANBACK_LAUNCHER" />\n            <category android:name="android.intent.category.LAUNCHER" />\n        </intent-filter>\n    </activity>\n$1|' "$MANIFEST"
+            # تسجيل Provider للتهيئة
+            if ! grep -q "StreamPrefInitProvider" "$MANIFEST"; then
+              perl -i -pe 's|(</application>)|    <provider\n        android:name="com.ultratv.tv.nativeapp.ext.StreamPrefInitProvider"\n        android:authorities="com.ultratv.tv.nativeapp.streampref"\n        android:exported="false" />\n    <activity\n        android:name="com.ultratv.tv.nativeapp.ext.StreamSettingsActivity"\n        android:exported="true"\n        android:label="STTITEN Settings">\n        <intent-filter>\n            <action android:name="android.intent.action.MAIN" />\n            <category android:name="android.intent.category.LEANBACK_LAUNCHER" />\n            <category android:name="android.intent.category.LAUNCHER" />\n        </intent-filter>\n    </activity>\n$1|' "$MANIFEST"
             fi
           fi
           echo "manifest updated"
+          grep -A 3 "StreamPrefInitProvider\|StreamSettingsActivity" "$MANIFEST" | head -20
 
-      - name: Initialize StreamPref in ExoEngine
+      # ============================================================
+      # 5. 🔥 التعديل الحاسم في XtreamClient.kt
+      # ============================================================
+      - name: Patch XtreamClient - apply extension from StreamPref
         working-directory: source/android-native
         run: |
-          EXO="app/src/main/kotlin/com/ultratv/tv/nativeapp/ui/player/engine/ExoEngine.kt"
-          if [ -f "$EXO" ]; then
-            echo "=== Before ==="
-            grep -n "DefaultHttpDataSource\|ResolvingDataSource\|import" "$EXO" | head -20
-            
-            # إضافة import
-            if ! grep -q "com.ultratv.tv.nativeapp.ext.StreamPref" "$EXO"; then
-              sed -i '0,/^import /s//import com.ultratv.tv.nativeapp.ext.StreamPref\nimport /' "$EXO"
-            fi
-            if ! grep -q "ResolvingDataSource" "$EXO"; then
-              sed -i '0,/^import /s//import androidx.media3.datasource.ResolvingDataSource\nimport /' "$EXO"
-            fi
-            
-            # تعديل DefaultHttpDataSource لاستخدام ResolvingDataSource
-            if grep -q "DefaultHttpDataSource.Factory()" "$EXO" && ! grep -q "ResolvingDataSource" "$EXO"; then
-              perl -i -pe 's|(val http = DefaultHttpDataSource\.Factory\(\)[^\n]*\n)|$1        val httpResolving = ResolvingDataSource.Factory(http) { dataSpec ->\n            val newUri = StreamPref.applyTo(dataSpec.uri)\n            dataSpec.buildUpon().setUri(newUri).build()\n        }\n|' "$EXO"
-            fi
-            
-            # استبدال استخدام http بـ httpResolving في مكان ما إن أمكن
-            # ملاحظة: نترك http كما هو، ويمكن استخدام httpResolving يدوياً
-            
-            echo "=== After ==="
-            grep -n "StreamPref\|ResolvingDataSource\|DefaultHttpDataSource" "$EXO" | head -10
+          XTREAM="app/src/main/kotlin/com/ultratv/tv/nativeapp/data/xtream/XtreamClient.kt"
+          if [ ! -f "$XTREAM" ]; then
+            echo "ERROR: XtreamClient.kt not found"
+            exit 1
+          fi
+          
+          echo "===== قبل التعديل ====="
+          grep -n '\$sid\.ts\|pathPrefix(p, "live")' "$XTREAM"
+          
+          # استبدال السطر الحاسم
+          # قبل: val url = "${pathPrefix(p, "live")}$sid.ts"
+          # بعد: val url = "${pathPrefix(p, "live")}$sid${com.ultratv.tv.nativeapp.ext.StreamPref.getSuffix()}"
+          sed -i 's|pathPrefix(p, "live")}\$sid\.ts"|pathPrefix(p, "live")}\$sid${com.ultratv.tv.nativeapp.ext.StreamPref.getSuffix()}"|g' "$XTREAM"
+          
+          echo ""
+          echo "===== بعد التعديل ====="
+          grep -n 'StreamPref.getSuffix\|pathPrefix(p, "live")' "$XTREAM"
+          
+          # التحقق
+          if grep -q "StreamPref.getSuffix" "$XTREAM"; then
+            echo "SUCCESS: patch applied"
           else
-            echo "ExoEngine.kt not found"
+            echo "FAILED: patch not applied, trying alternative"
+            # طريقة بديلة
+            perl -i -pe 's/\$sid\.ts"/\$sid\${com.ultratv.tv.nativeapp.ext.StreamPref.getSuffix()}"/g' "$XTREAM"
+            grep -n 'StreamPref.getSuffix' "$XTREAM"
           fi
 
       - name: Configure universal APK
@@ -275,7 +310,6 @@ jobs:
               perl -i -pe 's/(android\s*\{)/$1\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' "$A"
             fi
           fi
-          echo "universal configured"
 
       - name: Setup Gradle properties
         working-directory: source/android-native
@@ -298,6 +332,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: STTITEN-IP-TV-Ext-Switch
+          name: STTITEN-IP-TV-Ext
           path: 'source/android-native/**/*.apk'
           if-no-files-found: error
