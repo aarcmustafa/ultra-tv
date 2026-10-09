@@ -9,6 +9,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # 1. استنساخ المستودع
       - name: Checkout Ultra TV
         uses: actions/checkout@v4
         with:
@@ -16,6 +17,25 @@ jobs:
           ref: main
           path: source
           fetch-depth: 1
+
+      # 2. تشخيص سريع
+      - name: Diagnostic - Show structure
+        working-directory: source
+        run: |
+          echo "===== محتويات الجذر ====="
+          ls -la
+          
+          echo ""
+          echo "===== هل يوجد android-app؟ ====="
+          if [ -d "android-app" ]; then
+            echo "نعم، موجود"
+          else
+            echo "لا، محذوف ✅"
+          fi
+          
+          echo ""
+          echo "===== محتويات android-native ====="
+          ls -la android-native 2>/dev/null || echo "غير موجود"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -36,160 +56,107 @@ jobs:
       - name: Install Android SDK components
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0" || true
 
-      - name: Install ImageMagick
-        run: sudo apt-get update -qq && sudo apt-get install -y imagemagick fonts-dejavu
-
       - name: Cache Gradle
         uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: sttiten-final-${{ hashFiles('source/android-native/**/*.gradle*') }}
-          restore-keys: sttiten-final-
+          key: sttiten-final2-${{ hashFiles('source/android-native/**/*.gradle*') }}
+          restore-keys: sttiten-final2-
 
       # ============================================================
-      # 1. تغيير اسم التطبيق (UTV → STTITEN IP TV)
+      # 3. تغيير الاسم في strings.xml
       # ============================================================
       - name: Change app name in strings.xml
         working-directory: source/android-native
         run: |
           find . -name "strings.xml" -not -path "*/build/*" | while read f; do
-            # تغيير اسم التطبيق الرئيسي
+            echo "--- تعديل: $f ---"
             sed -i 's|<string name="app_name">[^<]*</string>|<string name="app_name">STTITEN IP TV</string>|g' "$f"
-            # استبدال قيم أخرى
             sed -i 's|>UTV<|>STTITEN IP TV<|g' "$f"
             sed -i 's|>Ultra TV<|>STTITEN IP TV<|g' "$f"
             sed -i 's|>ULTRA TV<|>STTITEN IP TV<|g' "$f"
+            sed -i 's|>TV ULTRA<|>STTITEN IP TV<|g' "$f"
           done
           
+          # إنشاء ملف عربي
           mkdir -p app/src/main/res/values-ar
           cat > app/src/main/res/values-ar/strings.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
               <string name="app_name">STTITEN IP TV</string>
               <string name="developer_name">جلولي مصطفى</string>
-              <string name="developer_name_latin">Djelloubi Mustafa</string>
+              <string name="developer_name_latin">Djellouli Mustafa</string>
           </resources>
           EOF
           
+          echo ""
           echo "===== التحقق ====="
           grep -n 'name="app_name"' app/src/main/res/values/strings.xml
 
       # ============================================================
-      # 2. 🔥 استبدال "ULTRA TV" في CloudPairingDialog.kt (المسؤول عن الشريط العلوي)
+      # 4. استبدال "ULTRA TV" في ملفات Kotlin (الشريط العلوي)
       # ============================================================
-      - name: Replace ULTRA TV in CloudPairingDialog
+      - name: Replace brand in Kotlin files
         working-directory: source/android-native
         run: |
+          # استبدال مباشر في CloudPairingDialog.kt (المسؤول عن الشريط العلوي)
           TARGET="app/src/main/kotlin/com/ultratv/tv/nativeapp/ui/settings/CloudPairingDialog.kt"
-          
           if [ -f "$TARGET" ]; then
             echo "===== قبل التعديل ====="
-            grep -n "ULTRA\|Ultra" "$TARGET"
+            grep -n "ULTRA\|Ultra\|UTV" "$TARGET" | head -5
             
-            # استبدال النص الحرفي فقط داخل Text()
             sed -i 's|"ULTRA TV"|"STTITEN IP TV"|g' "$TARGET"
             sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$TARGET"
-            sed -i 's|"ULTRA"|"STTITEN"|g' "$TARGET"
+            sed -i 's|"UTV"|"STTITEN IP TV"|g' "$TARGET"
             
             echo ""
             echo "===== بعد التعديل ====="
-            grep -n "STTITEN\|ULTRA\|Ultra" "$TARGET"
-          else
-            echo "⚠️ لم يتم العثور على الملف"
+            grep -n "STTITEN\|ULTRA\|Ultra\|UTV" "$TARGET" | head -5
           fi
-
-      # ============================================================
-      # 3. استبدال شامل لأي "ULTRA TV" آخر
-      # ============================================================
-      - name: Replace brand everywhere in Kotlin
-        working-directory: source/android-native
-        run: |
+          
+          # استبدال شامل في كل ملفات Kotlin
+          echo ""
+          echo "===== استبدال شامل في كل Kotlin ====="
           find . -name "*.kt" -not -path "*/build/*" | while read f; do
             sed -i 's|"ULTRA TV"|"STTITEN IP TV"|g' "$f"
-            sed -i 's|"TV ULTRA"|"STTITEN IP TV"|g' "$f"
             sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$f"
+            sed -i 's|"TV ULTRA"|"STTITEN IP TV"|g' "$f"
             sed -i 's|"UltraTV"|"STTITEN IP TV"|g' "$f"
+            sed -i 's|"UTV"|"STTITEN IP TV"|g' "$f"
           done
-          
-          echo "===== التحقق من النصوص المتبقية ====="
-          grep -rn '"ULTRA TV"\|"Ultra TV"\|"TV ULTRA"' --include="*.kt" . 2>/dev/null | head -5 || echo "لا شيء ✅"
           
           echo ""
-          echo "===== ما تم تعديله ====="
-          grep -rn '"STTITEN IP TV"' --include="*.kt" . 2>/dev/null | head -5
+          echo "===== التحقق النهائي ====="
+          REMAINING=$(grep -rl '"ULTRA TV"\|"Ultra TV"\|"UTV"' --include="*.kt" . 2>/dev/null | wc -l)
+          echo "ملفات Kotlin لا تزال بها الاسم القديم: $REMAINING"
 
       # ============================================================
-      # 4. إنشاء شعارات PNG جديدة
+      # 5. استبدال في كل ملفات XML
       # ============================================================
-      - name: Create logo PNGs
-        working-directory: source/android-native
+      - name: Replace in all XML files
+        working-directory: source/android-native/app/src/main/res
         run: |
-          mkdir -p app/src/main/res/drawable-nodpi
-          
-          convert -size 1200x400 xc:transparent \
-            -font DejaVu-Sans-Bold -pointsize 110 \
-            -fill "#FFFFFF" -gravity center \
-            -annotate +0+0 "STTITEN IP TV" \
-            app/src/main/res/drawable-nodpi/sttiten_logo.png
-          
-          convert -size 512x512 xc:"#0E1116" \
-            -font DejaVu-Sans-Bold -pointsize 70 \
-            -fill "#FFFFFF" -gravity center \
-            -annotate +0+0 "STTITEN\nIP TV" \
-            app/src/main/res/drawable-nodpi/sttiten_icon.png
-          
-          ls -la app/src/main/res/drawable-nodpi/
-
-      # ============================================================
-      # 5. استبدال ملفات XML (بدون لمس banner)
-      # ============================================================
-      - name: Replace XML logo files
-        working-directory: source/android-native
-        run: |
-          find app/src/main/res/drawable -name "*.xml" | while read f; do
-            FILENAME=$(basename "$f")
-            
-            if echo "$FILENAME" | grep -qiE "banner|telegram"; then
-              echo "⏭️ تخطي: $FILENAME"
-              continue
-            fi
-            
-            if grep -qE "<vector|<shape|<layer-list" "$f" 2>/dev/null; then
-              if echo "$FILENAME" | grep -qiE "launcher|icon"; then
-                IMG="sttiten_icon"
-              else
-                IMG="sttiten_logo"
-              fi
-              
-              cat > "$f" << XMLEOF
-          <?xml version="1.0" encoding="utf-8"?>
-          <bitmap xmlns:android="http://schemas.android.com/apk/res/android"
-              android:src="@drawable/$IMG"
-              android:gravity="center" />
-          XMLEOF
+          find . -name "*.xml" -type f | while read f; do
+            if grep -qE "UTV|Ultra TV|ULTRA TV|TV ULTRA" "$f" 2>/dev/null; then
+              echo "✅ تعديل: $f"
+              sed -i 's|>UTV<|>STTITEN IP TV<|g' "$f"
+              sed -i 's|>Ultra TV<|>STTITEN IP TV<|g' "$f"
+              sed -i 's|>ULTRA TV<|>STTITEN IP TV<|g' "$f"
+              sed -i 's|>TV ULTRA<|>STTITEN IP TV<|g' "$f"
+              sed -i 's|android:text="UTV"|android:text="STTITEN IP TV"|g' "$f"
+              sed -i 's|android:text="ULTRA TV"|android:text="STTITEN IP TV"|g' "$f"
             fi
           done
           
-          find app/src/main/res/mipmap-anydpi-v26 -name "*.xml" 2>/dev/null | while read f; do
-            FILENAME=$(basename "$f")
-            if echo "$FILENAME" | grep -qi "banner"; then
-              continue
-            fi
-            cat > "$f" << XMLEOF
-          <?xml version="1.0" encoding="utf-8"?>
-          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-              <background android:drawable="@color/black" />
-              <foreground android:drawable="@drawable/sttiten_icon" />
-          </adaptive-icon>
-          XMLEOF
-          done
-          
-          echo "✅ تم استبدال ملفات XML"
+          echo ""
+          echo "===== التحقق ====="
+          REMAINING=$(grep -rl "UTV\|Ultra TV\|ULTRA TV" --include="*.xml" . 2>/dev/null | wc -l)
+          echo "ملفات XML لا تزال بها الاسم القديم: $REMAINING"
 
       # ============================================================
-      # 6. دمج المعماريتين
+      # 6. دمج المعماريتين في APK واحد
       # ============================================================
       - name: Configure universal APK
         working-directory: source/android-native
@@ -198,12 +165,24 @@ jobs:
           if [ -f "$APP_GRADLE" ]; then
             if ! grep -q 'abiFilters' "$APP_GRADLE"; then
               perl -i -pe 's/(defaultConfig\s*\{)/$1\n        ndk {\n            abiFilters += listOf("arm64-v8a", "armeabi-v7a")\n        }/' "$APP_GRADLE"
+              echo "✅ تم إضافة abiFilters"
+            else
+              echo "ℹ️ abiFilters موجود مسبقاً"
             fi
+            
             if ! grep -q 'useLegacyPackaging' "$APP_GRADLE"; then
               perl -i -pe 's/(android\s*\{)/$1\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' "$APP_GRADLE"
+              echo "✅ تم إضافة packaging"
             fi
+            
+            echo ""
+            echo "===== التحقق ====="
+            grep -n -A 3 "abiFilters" "$APP_GRADLE" | head -8
           fi
 
+      # ============================================================
+      # 7. إعدادات Gradle
+      # ============================================================
       - name: Setup Gradle properties
         working-directory: source/android-native
         run: |
@@ -214,12 +193,12 @@ jobs:
           echo "android.useAndroidX=true" >> gradle.properties
           echo "kotlin.code.style=official" >> gradle.properties
 
-      - name: Grant execute permission
+      - name: Grant execute permission for gradlew
         working-directory: source/android-native
         run: chmod +x gradlew
 
       # ============================================================
-      # 7. البناء
+      # 8. البناء
       # ============================================================
       - name: Build APK
         working-directory: source/android-native
@@ -230,6 +209,12 @@ jobs:
         run: |
           echo "===== حجم APK ====="
           find . -name "*.apk" -exec ls -lh {} \;
+          
+          echo ""
+          echo "===== المعماريات المضمنة ====="
+          for apk in $(find . -name "*.apk" | head -1); do
+            unzip -l "$apk" | grep "\.so$" | awk '{print $4}' | grep -oE "lib/[^/]+" | sort -u
+          done
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
