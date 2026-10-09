@@ -45,47 +45,26 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: sttiten-split-${{ hashFiles('source/android-native/**/*.gradle*') }}
-          restore-keys: sttiten-split-
+          key: sttiten-final3-${{ hashFiles('source/android-native/**/*.gradle*') }}
+          restore-keys: sttiten-final3-
 
       # ============================================================
-      # 🔍 الخطوة 1: تشخيص دقيق لنص الشريط العلوي
+      # 🔍 1. تشخيص: عرض بنية الشريط العلوي
       # ============================================================
-      - name: Diagnostic - Analyze TopBar text structure
+      - name: Diagnostic - Analyze TopBar structure
         working-directory: source/android-native
         run: |
           TARGET="app/src/main/kotlin/com/ultratv/tv/nativeapp/ui/settings/CloudPairingDialog.kt"
           
-          echo "===================================================="
           echo "===== محتوى CloudPairingDialog.kt (الأسطر 60-100) ====="
-          echo "===================================================="
           sed -n '60,100p' "$TARGET" 2>/dev/null || echo "الملف غير موجود"
           
           echo ""
-          echo "===================================================="
-          echo "===== هل النص مقسّم؟ ====="
-          echo "===================================================="
-          
-          if grep -qE 'Text\("ULTRA"\)|Text\("ULTRA",' "$TARGET" 2>/dev/null; then
-            echo "🔴 وجدت: Text(\"ULTRA\") منفصل"
-          fi
-          
-          if grep -qE 'Text\("TV"\)|Text\("TV",' "$TARGET" 2>/dev/null; then
-            echo "🔴 وجدت: Text(\"TV\") منفصل"
-          fi
-          
-          if grep -qE '"ULTRA TV"|"Ultra TV"|"TV ULTRA"|"UTV"' "$TARGET" 2>/dev/null; then
-            echo "🔴 وجدت: نص كامل في Text واحد"
-          fi
-          
-          echo ""
-          echo "===================================================="
-          echo "===== كل الأسطر التي تحتوي ULTRA/TV/UTV في الملف ====="
-          echo "===================================================="
-          grep -nE '"ULTRA"|"TV"|"Ultra"|"UTV"' "$TARGET" 2>/dev/null | head -20
+          echo "===== كل الأسطر التي تحتوي ULTRA/TV/UTV ====="
+          grep -nE '"ULTRA"|"TV"|"Ultra"|"UTV"' "$TARGET" 2>/dev/null | head -20 || true
 
       # ============================================================
-      # 2. تغيير اسم التطبيق والمطور
+      # 2. تغيير اسم التطبيق والمطور في strings.xml
       # ============================================================
       - name: Change app name and developer
         working-directory: source/android-native
@@ -106,10 +85,10 @@ jobs:
               <string name="developer_name_latin">Djellouli Mustafa</string>
           </resources>
           EOF
-          echo "✅ تم تغيير الاسم"
+          echo "✅ تم تغيير الاسم والمطور"
 
       # ============================================================
-      # 3. 🔥 معالجة الشريط العلوي - تدعم الحالتين
+      # 3. 🔥 معالجة الشريط العلوي - تدعم جميع الحالات (مُصحّح)
       # ============================================================
       - name: Smart fix TopBar text (both cases)
         working-directory: source/android-native
@@ -122,14 +101,14 @@ jobs:
           fi
           
           echo "===== قبل المعالجة ====="
-          grep -nE 'Text\("(ULTRA|TV|Ultra|UTV)' "$TARGET" | head -10 || echo "لا توجد سطور مطابقة"
+          grep -nE 'Text\("(ULTRA|TV|Ultra|UTV)' "$TARGET" | head -10 || true
           
           # ============================================
           # الحالة 1: النص الكامل في Text واحد
           # ============================================
-          if grep -qE '"ULTRA TV"|"Ultra TV"|"TV ULTRA"|"UTV"' "$TARGET"; then
+          if grep -qE '"ULTRA TV"|"Ultra TV"|"TV ULTRA"|"UTV"' "$TARGET" 2>/dev/null; then
             echo ""
-            echo "🔵 الحالة 1 مكتشفة: نص كامل في Text واحد"
+            echo "🔵 الحالة 1: نص كامل في Text واحد"
             
             sed -i 's|"ULTRA TV"|"STTITEN IP TV"|g' "$TARGET"
             sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$TARGET"
@@ -140,31 +119,21 @@ jobs:
             sed -i 's|letterSpacing = TextUnit(1\.7f, TextUnitType\.Sp)|letterSpacing = TextUnit(0f, TextUnitType.Sp)|g' "$TARGET"
             sed -i 's|letterSpacing = TextUnit(1\.7f,.*Sp)|letterSpacing = TextUnit(0f, TextUnitType.Sp)|g' "$TARGET"
             
-            echo "✅ تم استبدال النص الكامل + إزالة letterSpacing"
+            echo "✅ تم استبدال النص + إزالة letterSpacing"
           fi
           
           # ============================================
-          # الحالة 2: النص مقسّم (Text("ULTRA") + Text("TV"))
+          # الحالة 2: النص مقسّم
           # ============================================
-          HAS_ULTRA=$(grep -cE 'Text\("ULTRA"\)|Text\("ULTRA",' "$TARGET" 2>/dev/null)
-          HAS_TV=$(grep -cE 'Text\("TV"\)|Text\("TV",' "$TARGET" 2>/dev/null)
+          HAS_ULTRA=$(grep -cE 'Text\("ULTRA"\)|Text\("ULTRA",' "$TARGET" 2>/dev/null || echo "0")
+          HAS_TV=$(grep -cE 'Text\("TV"\)|Text\("TV",' "$TARGET" 2>/dev/null || echo "0")
           
-          if [ "$HAS_ULTRA" -gt 0 ] && [ "$HAS_TV" -gt 0 ]; then
+          if [ "$HAS_ULTRA" -gt 0 ] 2>/dev/null && [ "$HAS_TV" -gt 0 ] 2>/dev/null; then
             echo ""
-            echo "🔵 الحالة 2 مكتشفة: النص مقسّم"
-            echo "   عدد Text(\"ULTRA\"): $HAS_ULTRA"
-            echo "   عدد Text(\"TV\"): $HAS_TV"
+            echo "🔵 الحالة 2: النص مقسّم"
             
-            # الاستراتيجية:
-            # - نستبدل الأول بالاسم الكامل
-            # - نستبدل الثاني بنص فارغ
-            # - هذا يضمن عدم وجود تكرار
-            
-            # الاستبدال 1: Text("ULTRA") → Text("STTITEN IP TV")
             sed -i 's|Text("ULTRA")|Text("STTITEN IP TV")|g' "$TARGET"
             sed -i 's|Text("ULTRA",|Text("STTITEN IP TV",|g' "$TARGET"
-            
-            # الاستبدال 2: Text("TV") → Text("")
             sed -i 's|Text("TV")|Text("")|g' "$TARGET"
             sed -i 's|Text("TV",|Text("",|g' "$TARGET"
             
@@ -172,28 +141,31 @@ jobs:
           fi
           
           # ============================================
-          # الحالة 3: نص في متغير (val title = "ULTRA TV")
+          # الحالة 3: نص في متغير
           # ============================================
-          if grep -qE '=\s*"ULTRA TV"|=\s*"Ultra TV"' "$TARGET"; then
+          if grep -qE '=\s*"ULTRA TV"|=\s*"Ultra TV"' "$TARGET" 2>/dev/null; then
             echo ""
-            echo "🔵 الحالة 3 مكتشفة: النص في متغير"
+            echo "🔵 الحالة 3: النص في متغير"
             sed -i 's|=\s*"ULTRA TV"|= "STTITEN IP TV"|g' "$TARGET"
             sed -i 's|=\s*"Ultra TV"|= "STTITEN IP TV"|g' "$TARGET"
             echo "✅ تم"
           fi
           
-          # ============================================
-          # الحالة 4: استبدال احتياطي شامل (أي "ULTRA" أو "TV" متبقي)
-          # ============================================
-          # في حالات نادرة، قد يكون النص في سطر واحد لكن بأشكال مختلفة
-          # لا نستبدل كل "TV" لأن كلمة TV تظهر في كلمات أخرى مثل Live TV
-          
           echo ""
           echo "===== بعد المعالجة ====="
-          sed -n '60,100p' "$TARGET"
+          sed -n '75,85p' "$TARGET"
+          
+          echo ""
+          echo "===== التحقق النهائي ====="
+          if grep -qE '"ULTRA TV"|"Ultra TV"|"TV ULTRA"|"UTV"' "$TARGET" 2>/dev/null; then
+            echo "⚠️ لا يزال النص القديم موجوداً"
+            grep -n 'ULTRA\|UTV' "$TARGET" | head -3 || true
+          else
+            echo "✅ لا يوجد نص قديم"
+          fi
 
       # ============================================================
-      # 4. استبدال احتياطي شامل في كل ملفات Kotlin
+      # 4. استبدال شامل في كل ملفات Kotlin
       # ============================================================
       - name: Global replace in all Kotlin
         working-directory: source/android-native
@@ -208,21 +180,47 @@ jobs:
           echo "✅ تم الاستبدال الشامل"
 
       # ============================================================
-      # 5. دمج المعماريتين
+      # 5. استبدال في ملفات XML
       # ============================================================
-      - name: Configure universal APK
+      - name: Replace in XML files
+        working-directory: source/android-native/app/src/main/res
+        run: |
+          find . -name "*.xml" -type f | while read f; do
+            if grep -qE ">UTV<|>Ultra TV<|>ULTRA TV<|>TV ULTRA<" "$f" 2>/dev/null; then
+              sed -i 's|>UTV<|>STTITEN IP TV<|g' "$f"
+              sed -i 's|>Ultra TV<|>STTITEN IP TV<|g' "$f"
+              sed -i 's|>ULTRA TV<|>STTITEN IP TV<|g' "$f"
+              sed -i 's|>TV ULTRA<|>STTITEN IP TV<|g' "$f"
+            fi
+          done
+          echo "✅ تم"
+
+      # ============================================================
+      # 6. دمج المعماريتين في APK واحد
+      # ============================================================
+      - name: Configure universal APK (arm64 + armv7)
         working-directory: source/android-native
         run: |
           APP_GRADLE="app/build.gradle.kts"
           if [ -f "$APP_GRADLE" ]; then
             if ! grep -q 'abiFilters' "$APP_GRADLE"; then
               perl -i -pe 's/(defaultConfig\s*\{)/$1\n        ndk {\n            abiFilters += listOf("arm64-v8a", "armeabi-v7a")\n        }/' "$APP_GRADLE"
+              echo "✅ تم إضافة abiFilters"
             fi
+            
             if ! grep -q 'useLegacyPackaging' "$APP_GRADLE"; then
               perl -i -pe 's/(android\s*\{)/$1\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' "$APP_GRADLE"
+              echo "✅ تم إضافة packaging"
             fi
+            
+            echo ""
+            echo "===== التحقق ====="
+            grep -n -A 3 "abiFilters" "$APP_GRADLE" | head -8 || true
           fi
 
+      # ============================================================
+      # 7. إعدادات Gradle
+      # ============================================================
       - name: Setup Gradle properties
         working-directory: source/android-native
         run: |
@@ -238,21 +236,27 @@ jobs:
         run: chmod +x gradlew
 
       # ============================================================
-      # 6. البناء
+      # 8. البناء
       # ============================================================
       - name: Build APK
         working-directory: source/android-native
         run: ./gradlew assembleDebug --stacktrace --no-daemon --no-parallel
 
-      - name: Show APK
+      - name: Show APK info
         working-directory: source/android-native
         run: |
           echo "===== حجم APK ====="
           find . -name "*.apk" -exec ls -lh {} \;
+          
+          echo ""
+          echo "===== المعماريات المضمنة ====="
+          for apk in $(find . -name "*.apk" | head -1); do
+            unzip -l "$apk" | grep "\.so$" | awk '{print $4}' | grep -oE "lib/[^/]+" | sort -u
+          done
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: STTITEN-IP-TV
+          name: STTITEN-IP-TV-Universal
           path: 'source/android-native/**/*.apk'
           if-no-files-found: error
