@@ -45,38 +45,46 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: sttiten-icons-${{ hashFiles('source/android-native/**/*.gradle*') }}
-          restore-keys: sttiten-icons-
+          key: sttiten-mipmap-${{ hashFiles('source/android-native/**/*.gradle*') }}
+          restore-keys: sttiten-mipmap-
 
       # ============================================================
-      # 1. تشخيص: عرض كل ملفات XML Vector في drawable ومكتبات mipmap
+      # 1. تشخيص: عرض كل ملفات mipmap
       # ============================================================
-      - name: Diagnostic - List all vector XML files
+      - name: Diagnostic - List mipmap files
         working-directory: source/android-native/app/src/main/res
         run: |
-          echo "===== كل ملفات XML في drawable ====="
-          find drawable* -name "*.xml" -type f 2>/dev/null | sort
+          echo "===== محتويات mipmap-mdpi ====="
+          ls -la mipmap-mdpi/ 2>/dev/null || echo "غير موجود"
+          echo ""
+          echo "===== محتويات mipmap-hdpi ====="
+          ls -la mipmap-hdpi/ 2>/dev/null || echo "غير موجود"
+          echo ""
+          echo "===== محتويات mipmap-xhdpi ====="
+          ls -la mipmap-xhdpi/ 2>/dev/null || echo "غير موجود"
+          echo ""
+          echo "===== محتويات mipmap-xxhdpi ====="
+          ls -la mipmap-xxhdpi/ 2>/dev/null || echo "غير موجود"
+          echo ""
+          echo "===== محتويات mipmap-xxxhdpi ====="
+          ls -la mipmap-xxxhdpi/ 2>/dev/null || echo "غير موجود"
+          echo ""
+          echo "===== محتويات mipmap-anydpi-v26 ====="
+          ls -la mipmap-anydpi-v26/ 2>/dev/null || echo "غير موجود"
           
           echo ""
-          echo "===== كل ملفات XML في mipmap-anydpi-v26 ====="
-          find mipmap-anydpi-v26 -name "*.xml" -type f 2>/dev/null | sort
-          
-          echo ""
-          echo "===== كل ملفات PNG (لن نلمسها) ====="
-          find . -name "*.png" -type f 2>/dev/null | sort | head -30
-          
-          echo ""
-          echo "===== ملفات XML التي تشير إلى vector/shape ====="
-          for f in $(find drawable* mipmap-anydpi-v26 -name "*.xml" 2>/dev/null); do
-            if grep -qE "<vector|<shape|<layer-list" "$f" 2>/dev/null; then
-              echo "  $f"
-            fi
+          echo "===== محتوى ملفات XML في mipmap-anydpi-v26 ====="
+          for f in mipmap-anydpi-v26/*.xml; do
+            [ -f "$f" ] || continue
+            echo "--- $f ---"
+            cat "$f"
+            echo ""
           done
 
       # ============================================================
-      # 2. تغيير اسم التطبيق في strings.xml
+      # 2. تغيير اسم التطبيق والمطور
       # ============================================================
-      - name: Change app name in strings.xml
+      - name: Change app name and developer
         working-directory: source/android-native
         run: |
           find . -name "strings.xml" -not -path "*/build/*" | while read f; do
@@ -84,7 +92,6 @@ jobs:
             sed -i 's|>UTV<|>STTITEN IP TV<|g' "$f"
             sed -i 's|>Ultra TV<|>STTITEN IP TV<|g' "$f"
             sed -i 's|>ULTRA TV<|>STTITEN IP TV<|g' "$f"
-            sed -i 's|>TV ULTRA<|>STTITEN IP TV<|g' "$f"
           done
           
           mkdir -p app/src/main/res/values-ar
@@ -96,153 +103,221 @@ jobs:
               <string name="developer_name_latin">Djellouli Mustafa</string>
           </resources>
           EOF
-          
           echo "✅ تم تغيير الاسم"
 
       # ============================================================
-      # 3. استبدال "ULTRA TV" في ملفات Kotlin
+      # 3. استبدال النصوص في Kotlin
       # ============================================================
-      - name: Replace brand in Kotlin
+      - name: Replace brand in Kotlin files
         working-directory: source/android-native
         run: |
           find . -name "*.kt" -not -path "*/build/*" | while read f; do
             sed -i 's|"ULTRA TV"|"STTITEN IP TV"|g' "$f"
             sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$f"
-            sed -i 's|"TV ULTRA"|"STTITEN IP TV"|g' "$f"
-            sed -i 's|"UltraTV"|"STTITEN IP TV"|g' "$f"
             sed -i 's|"UTV"|"STTITEN IP TV"|g' "$f"
           done
           echo "✅ تم"
 
       # ============================================================
-      # 4. 🔥 إنشاء صور PNG جديدة (لا نلمس الموجود)
+      # 4. 🔥 إنشاء صور جديدة لمجلدات mipmap
       # ============================================================
-      - name: Create new PNG logos
+      - name: Generate new icon PNGs for each mipmap density
         working-directory: source/android-native/app/src/main/res
         run: |
+          # الألوان
+          BG="#0E1116"
+          FG="#FFFFFF"
+          ACCENT="#FF3A2F"
+          
+          # ============================================
+          # mipmap-mdpi → 48×48
+          # ============================================
+          echo "===== mipmap-mdpi (48×48) ====="
+          mkdir -p mipmap-mdpi
+          convert -size 48x48 xc:"$BG" \
+            -font DejaVu-Sans-Bold -pointsize 24 \
+            -fill "$FG" -gravity center \
+            -annotate +0+0 "S" \
+            mipmap-mdpi/ic_launcher.png
+          
+          convert -size 48x48 xc:"$BG" \
+            -font DejaVu-Sans-Bold -pointsize 24 \
+            -fill "$FG" -gravity center \
+            -annotate +0+0 "S" \
+            mipmap-mdpi/ic_launcher_round.png 2>/dev/null || true
+          
+          # ============================================
+          # mipmap-hdpi → 72×72
+          # ============================================
+          echo "===== mipmap-hdpi (72×72) ====="
+          mkdir -p mipmap-hdpi
+          convert -size 72x72 xc:"$BG" \
+            -font DejaVu-Sans-Bold -pointsize 32 \
+            -fill "$FG" -gravity center \
+            -annotate +0+0 "ST" \
+            mipmap-hdpi/ic_launcher.png
+          
+          convert -size 72x72 xc:"$BG" \
+            -font DejaVu-Sans-Bold -pointsize 32 \
+            -fill "$FG" -gravity center \
+            -annotate +0+0 "ST" \
+            mipmap-hdpi/ic_launcher_round.png 2>/dev/null || true
+          
+          # ============================================
+          # mipmap-xhdpi → 96×96
+          # ============================================
+          echo "===== mipmap-xhdpi (96×96) ====="
+          mkdir -p mipmap-xhdpi
+          convert -size 96x96 xc:"$BG" \
+            -font DejaVu-Sans-Bold -pointsize 42 \
+            -fill "$FG" -gravity center \
+            -annotate +0+0 "STT" \
+            mipmap-xhdpi/ic_launcher.png
+          
+          convert -size 96x96 xc:"$BG" \
+            -font DejaVu-Sans-Bold -pointsize 42 \
+            -fill "$FG" -gravity center \
+            -annotate +0+0 "STT" \
+            mipmap-xhdpi/ic_launcher_round.png 2>/dev/null || true
+          
+          # ============================================
+          # mipmap-xxhdpi → 144×144
+          # ============================================
+          echo "===== mipmap-xxhdpi (144×144) ====="
+          mkdir -p mipmap-xxhdpi
+          convert -size 144x144 xc:"$BG" \
+            -font DejaVu-Sans-Bold -pointsize 60 \
+            -fill "$FG" -gravity center \
+            -annotate +0+0 "STT" \
+            mipmap-xxhdpi/ic_launcher.png
+          
+          convert -size 144x144 xc:"$BG" \
+            -font DejaVu-Sans-Bold -pointsize 60 \
+            -fill "$FG" -gravity center \
+            -annotate +0+0 "STT" \
+            mipmap-xxhdpi/ic_launcher_round.png 2>/dev/null || true
+          
+          # ============================================
+          # mipmap-xxxhdpi → 192×192
+          # ============================================
+          echo "===== mipmap-xxxhdpi (192×192) ====="
+          mkdir -p mipmap-xxxhdpi
+          convert -size 192x192 xc:"$BG" \
+            -font DejaVu-Sans-Bold -pointsize 80 \
+            -fill "$FG" -gravity center \
+            -annotate +0+0 "STT" \
+            mipmap-xxxhdpi/ic_launcher.png
+          
+          convert -size 192x192 xc:"$BG" \
+            -font DejaVu-Sans-Bold -pointsize 80 \
+            -fill "$FG" -gravity center \
+            -annotate +0+0 "STT" \
+            mipmap-xxxhdpi/ic_launcher_round.png 2>/dev/null || true
+          
+          # ============================================
+          # إنشاء نسخة كبيرة من الشعار في drawable-nodpi
+          # ============================================
+          echo "===== drawable-nodpi (شعار كامل) ====="
           mkdir -p drawable-nodpi
           
-          echo "===== إنشاء sttiten_logo.png (أفقي) ====="
-          convert -size 1200x400 xc:transparent \
-            -font DejaVu-Sans-Bold -pointsize 110 \
-            -fill "#FFFFFF" -gravity center \
+          # شعار أفقي كامل
+          convert -size 1280x400 xc:transparent \
+            -font DejaVu-Sans-Bold -pointsize 120 \
+            -fill "$FG" -gravity center \
             -annotate +0+0 "STTITEN IP TV" \
-            drawable-nodpi/sttiten_logo.png
+            drawable-nodpi/sttiten_full_logo.png
           
-          echo "===== إنشاء sttiten_icon.png (مربع) ====="
-          convert -size 512x512 xc:"#0E1116" \
-            -font DejaVu-Sans-Bold -pointsize 70 \
-            -fill "#FFFFFF" -gravity center \
-            -annotate +0+0 "STTITEN\nIP TV" \
+          # شعار مربع بجودة عالية
+          convert -size 512x512 xc:"$BG" \
+            -font DejaVu-Sans-Bold -pointsize 90 \
+            -fill "$FG" -gravity center \
+            -annotate +0+0 "STTITEN" \
+            -pointsize 50 -annotate +0+80 "IP TV" \
             drawable-nodpi/sttiten_icon.png
           
-          echo "===== إنشاء sttiten_banner_text.png (بانر نصي) ====="
-          convert -size 320x180 xc:"#0E1116" \
-            -font DejaVu-Sans-Bold -pointsize 36 \
-            -fill "#FFFFFF" -gravity center \
-            -annotate +0+0 "STTITEN" \
-            -pointsize 22 -annotate +0+50 "IP TV" \
-            drawable-nodpi/sttiten_banner_text.png
-          
           echo ""
-          echo "===== الصور الجديدة ====="
-          ls -la drawable-nodpi/
+          echo "===== جميع الصور التي تم إنشاؤها ====="
+          find . -name "*.png" -newer /tmp -mmin -2 2>/dev/null | head -30
+          ls -la mipmap-mdpi/ mipmap-hdpi/ mipmap-xhdpi/ mipmap-xxhdpi/ mipmap-xxxhdpi/
 
       # ============================================================
-      # 5. 🔥 استبدال ملفات XML للشعارات (مع الحفاظ على PNG الموجود)
+      # 5. 🔥 تعديل ملفات XML في mipmap-anydpi-v26 للربط بالأيقونات الجديدة
       # ============================================================
-      - name: Replace XML logo files (preserve banner.png)
+      - name: Update adaptive icons in mipmap-anydpi-v26
         working-directory: source/android-native/app/src/main/res
         run: |
-          echo "===== البدء في معالجة ملفات XML ====="
-          
-          # قائمة الملفات المستثناة (لا نلمسها)
-          EXCLUDE="ic_opensubtitles_logo.xml ic_tmdb_logo.xml telegram_qr.xml"
-          
-          # نبحث في جميع مجلدات drawable
-          for DIR in drawable drawable-v24 drawable-hdpi drawable-mdpi drawable-xhdpi drawable-xxhdpi drawable-xxxhdpi; do
-            if [ ! -d "$DIR" ]; then continue; fi
-            
-            for f in "$DIR"/*.xml; do
-              [ -f "$f" ] || continue
-              FILENAME=$(basename "$f")
-              
-              # تخطي الملفات المستثناة
-              if echo "$EXCLUDE" | grep -qw "$FILENAME"; then
-                echo "⏭️ تخطي (خدمة): $FILENAME"
-                continue
-              fi
-              
-              # تخطي أي ملف له علاقة بـ banner (نحافظ على PNG)
-              if echo "$FILENAME" | grep -qi "banner"; then
-                echo "⏭️ تخطي (banner): $FILENAME"
-                continue
-              fi
-              
-              # هل الملف vector/shape/layer-list؟
-              if grep -qE "<vector|<shape|<layer-list" "$f" 2>/dev/null; then
-                # استثناء: إذا كان داخل layer-list (نحافظ على البنية)
-                if grep -q "<layer-list" "$f"; then
-                  echo "⏭️ تخطي (layer-list): $FILENAME"
-                  continue
-                fi
-                
-                echo "✅ استبدال: $FILENAME"
-                
-                # اختر الصورة المناسبة
-                if echo "$FILENAME" | grep -qiE "ic_launcher|launcher"; then
-                  IMG="sttiten_icon"
-                elif echo "$FILENAME" | grep -qiE "splash"; then
-                  IMG="sttiten_banner_text"
-                else
-                  IMG="sttiten_logo"
-                fi
-                
-                cat > "$f" << XMLEOF
-          <?xml version="1.0" encoding="utf-8"?>
-          <bitmap xmlns:android="http://schemas.android.com/apk/res/android"
-              android:src="@drawable/$IMG"
-              android:gravity="center" />
-          XMLEOF
-              fi
-            done
+          echo "===== قبل التعديل ====="
+          for f in mipmap-anydpi-v26/*.xml; do
+            [ -f "$f" ] || continue
+            echo "--- $f ---"
+            cat "$f"
+            echo ""
           done
           
-          echo ""
-          echo "===== معالجة mipmap-anydpi-v26 ====="
+          echo "===== استبدال محتوى XML ====="
           for f in mipmap-anydpi-v26/*.xml; do
             [ -f "$f" ] || continue
             FILENAME=$(basename "$f")
             
+            # تخطي أي ملف banner
             if echo "$FILENAME" | grep -qi "banner"; then
               echo "⏭️ تخطي: $FILENAME"
               continue
             fi
             
-            echo "✅ تعديل أيقونة تكيفية: $FILENAME"
-            cat > "$f" << XMLEOF
+            echo "✅ تعديل: $FILENAME"
+            cat > "$f" << 'XMLEOF'
           <?xml version="1.0" encoding="utf-8"?>
           <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-              <background android:drawable="@color/black" />
-              <foreground android:drawable="@drawable/sttiten_icon" />
+              <background android:drawable="@color/ic_launcher_background" />
+              <foreground android:drawable="@mipmap/ic_launcher_foreground" />
           </adaptive-icon>
           XMLEOF
           done
           
+          # إنشاء ic_launcher_foreground.png في mipmap-xxxhdpi
+          convert -size 432x432 xc:transparent \
+            -font DejaVu-Sans-Bold -pointsize 90 \
+            -fill "#FFFFFF" -gravity center \
+            -annotate +0+0 "STTITEN" \
+            -pointsize 50 -annotate +0+80 "IP TV" \
+            mipmap-xxxhdpi/ic_launcher_foreground.png
+          
           echo ""
           echo "===== التحقق النهائي ====="
-          echo "--- ملفات XML المعدلة ---"
-          for DIR in drawable*; do
-            for f in "$DIR"/*.xml; do
-              [ -f "$f" ] || continue
-              if grep -q "sttiten_" "$f" 2>/dev/null; then
-                echo "✅ $(basename $f)"
-              fi
-            done
+          for f in mipmap-anydpi-v26/*.xml; do
+            [ -f "$f" ] || continue
+            echo "--- $f ---"
+            head -5 "$f"
           done
 
       # ============================================================
-      # 6. دمج المعماريتين
+      # 6. إضافة لون الخلفية للأيقونة التكيفية
+      # ============================================================
+      - name: Add ic_launcher_background color
+        working-directory: source/android-native/app/src/main/res
+        run: |
+          mkdir -p values
+          COLORS_FILE="values/colors.xml"
+          
+          if [ ! -f "$COLORS_FILE" ]; then
+            cat > "$COLORS_FILE" << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+          </resources>
+          EOF
+          fi
+          
+          # إضافة اللون إذا لم يكن موجوداً
+          if ! grep -q "ic_launcher_background" "$COLORS_FILE"; then
+            sed -i 's|</resources>|    <color name="ic_launcher_background">#0E1116</color>\n</resources>|' "$COLORS_FILE"
+          fi
+          
+          echo "===== colors.xml ====="
+          cat "$COLORS_FILE"
+
+      # ============================================================
+      # 7. دمج المعماريتين
       # ============================================================
       - name: Configure universal APK
         working-directory: source/android-native
@@ -272,7 +347,7 @@ jobs:
         run: chmod +x gradlew
 
       # ============================================================
-      # 7. البناء
+      # 8. البناء
       # ============================================================
       - name: Build APK
         working-directory: source/android-native
@@ -283,6 +358,12 @@ jobs:
         run: |
           echo "===== حجم APK ====="
           find . -name "*.apk" -exec ls -lh {} \;
+          
+          echo ""
+          echo "===== الأيقونات المُضمَّنة في APK ====="
+          for apk in $(find . -name "*.apk" | head -1); do
+            unzip -l "$apk" | grep -E "ic_launcher|sttiten" | head -20
+          done
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
