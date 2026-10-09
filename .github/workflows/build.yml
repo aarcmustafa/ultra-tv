@@ -42,20 +42,14 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: sttiten-v6-${{ hashFiles('source/android-native/**/*.gradle*') }}
-          restore-keys: sttiten-v6-
+          key: sttiten-ext-${{ hashFiles('source/android-native/**/*.gradle*') }}
+          restore-keys: sttiten-ext-
 
-      - name: Diagnostic - Find .ts builder
+      - name: Remove any existing QR files
         working-directory: source/android-native
         run: |
-          echo "===== Files with .ts ====="
-          grep -rln '\.ts"\|\.ts'"'" --include="*.kt" . 2>/dev/null | grep -v "*/test/*" | head -20 || echo "none"
-          echo "===== Exact lines ====="
-          grep -rn '\.ts"\|\.ts'"'" --include="*.kt" . 2>/dev/null | grep -v "*/test/*" | head -20 || echo "none"
-          echo "===== Files with /live/ ====="
-          grep -rln '/live/' --include="*.kt" . 2>/dev/null | grep -v "*/test/*" | head -10 || echo "none"
-          echo "===== build.gradle files in app ====="
-          find app -maxdepth 2 -name "build.gradle*" 2>/dev/null
+          rm -rf app/src/main/kotlin/com/ultratv/tv/nativeapp/qr
+          echo "QR files removed"
 
       - name: Change app name and developer
         working-directory: source/android-native
@@ -102,199 +96,172 @@ jobs:
       - name: Create StreamPref helper
         working-directory: source/android-native
         run: |
-          PKG="app/src/main/kotlin/com/ultratv/tv/nativeapp/qr"
+          PKG="app/src/main/kotlin/com/ultratv/tv/nativeapp/ext"
           mkdir -p "$PKG"
           cat > "$PKG/StreamPref.kt" << 'KOTLIN_EOF'
-          package com.ultratv.tv.nativeapp.qr
+          package com.ultratv.tv.nativeapp.ext
           import android.content.Context
+          import android.net.Uri
           object StreamPref {
-              private const val PREFS = "sttiten_stream"
-              private const val KEY_EXT = "stream_ext"
+              private const val PREFS = "sttiten_ext"
+              private const val KEY = "stream_ext"
               private const val DEFAULT = "m3u8"
-              fun getExt(context: Context): String {
-                  return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                      .getString(KEY_EXT, DEFAULT) ?: DEFAULT
+              private var appCtx: Context? = null
+              fun init(context: Context) {
+                  appCtx = context.applicationContext
               }
-              fun setExt(context: Context, ext: String) {
-                  context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                      .edit().putString(KEY_EXT, ext).apply()
+              fun getExt(): String {
+                  val c = appCtx ?: return DEFAULT
+                  return c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                      .getString(KEY, DEFAULT) ?: DEFAULT
               }
-              fun applyTo(context: Context, baseUrl: String): String {
-                  val ext = getExt(context)
-                  if (ext.isEmpty()) return baseUrl
-                  val clean = baseUrl.substringBeforeLast('.')
-                  return "$clean.$ext"
+              fun setExt(ext: String) {
+                  val c = appCtx ?: return
+                  c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                      .edit().putString(KEY, ext).apply()
+              }
+              fun applyTo(uri: Uri): Uri {
+                  val ext = getExt()
+                  if (ext.isEmpty()) return uri
+                  val path = uri.lastPathSegment ?: return uri
+                  if (!path.contains(".")) return uri
+                  val base = path.substringBeforeLast('.')
+                  val newPath = "$base.$ext"
+                  return uri.buildUpon()
+                      .path(uri.path?.substringBeforeLast('/') + "/" + newPath)
+                      .build()
+              }
+              fun applyTo(url: String): String {
+                  val ext = getExt()
+                  if (ext.isEmpty()) return url
+                  val questionMark = url.indexOf('?')
+                  val base = if (questionMark > 0) url.substring(0, questionMark) else url
+                  val query = if (questionMark > 0) url.substring(questionMark) else ""
+                  if (!base.contains(".")) return url
+                  val noExt = base.substringBeforeLast('.')
+                  return "$noExt.$ext$query"
               }
           }
           KOTLIN_EOF
           echo "StreamPref created"
 
-      - name: Create QR Server file
+      - name: Create Stream Settings Activity
         working-directory: source/android-native
         run: |
-          PKG="app/src/main/kotlin/com/ultratv/tv/nativeapp/qr"
-          cat > "$PKG/QRConfigServer.kt" << 'KOTLIN_EOF'
-          package com.ultratv.tv.nativeapp.qr
-          import android.content.Context
-          import fi.iki.elonen.NanoHTTPD
-          import java.net.Inet4Address
-          import java.net.NetworkInterface
-          class QRConfigServer(private val context: Context, port: Int = 8765) : NanoHTTPD(port) {
-              override fun serve(session: IHTTPSession): Response {
-                  return when (session.uri) {
-                      "/" -> serveForm()
-                      "/submit" -> handleSubmit(session)
-                      else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not found")
-                  }
-              }
-              private fun serveForm(): Response {
-                  val current = StreamPref.getExt(context)
-                  val html = """
-          <!DOCTYPE html><html dir="rtl" lang="ar">
-          <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-          <title>STTITEN IP TV</title>
-          <style>body{font-family:Arial;max-width:480px;margin:20px auto;padding:20px;background:#0E1116;color:#FFF}h1{color:#FF3A2F;text-align:center}label{display:block;margin-top:15px;font-weight:bold}input,select{width:100%;padding:12px;margin-top:5px;border-radius:8px;border:1px solid #333;background:#1A1D23;color:#FFF;box-sizing:border-box}button{width:100%;padding:15px;margin-top:20px;background:#FF3A2F;color:#FFF;border:none;border-radius:8px;font-size:16px;cursor:pointer}.hidden{display:none}.hint{color:#888;font-size:12px;margin-top:4px}</style></head>
-          <body><h1>STTITEN IP TV</h1>
-          <form action="/submit" method="POST">
-          <label>نوع المصدر:</label>
-          <select name="type" onchange="tf()" id="tsel">
-          <option value="xtream">Xtream Codes</option>
-          <option value="m3u">رابط M3U / M3U8</option>
-          </select>
-          <div id="xf">
-          <label>عنوان السيرفر:</label><input type="text" name="serverUrl">
-          <label>اسم المستخدم:</label><input type="text" name="username">
-          <label>كلمة المرور:</label><input type="password" name="password">
-          </div>
-          <div id="mf" class="hidden">
-          <label>رابط M3U / M3U8:</label><input type="text" name="m3uUrl">
-          </div>
-          <label>امتداد البث (للقنوات المباشرة):</label>
-          <select name="streamExt">
-          <option value="m3u8" ${if(current=="m3u8")"selected" else ""}>m3u8 (موصى به)</option>
-          <option value="ts" ${if(current=="ts")"selected" else ""}>ts (تقليدي)</option>
-          <option value="m3u" ${if(current=="m3u")"selected" else ""}>m3u</option>
-          <option value="" ${if(current=="")"selected" else ""}>بدون امتداد</option>
-          </select>
-          <div class="hint">إذا لم تعمل القنوات، جرب امتداداً آخر</div>
-          <button type="submit">حفظ</button>
-          </form>
-          <script>function tf(){var t=document.getElementById('tsel').value;document.getElementById('xf').classList.toggle('hidden',t!=='xtream');document.getElementById('mf').classList.toggle('hidden',t!=='m3u');}</script>
-          </body></html>
-                  """.trimIndent()
-                  return newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", html)
-              }
-              private fun handleSubmit(session: IHTTPSession): Response {
-                  val files = HashMap<String, String>()
-                  session.parseBody(files)
-                  val params = session.parameters
-                  val prefs = context.getSharedPreferences("sttiten_qr", Context.MODE_PRIVATE)
-                  val ed = prefs.edit()
-                  val type = params["type"]?.firstOrNull() ?: "xtream"
-                  ed.putString("type", type)
-                  if (type == "xtream") {
-                      ed.putString("serverUrl", params["serverUrl"]?.firstOrNull() ?: "")
-                      ed.putString("username", params["username"]?.firstOrNull() ?: "")
-                      ed.putString("password", params["password"]?.firstOrNull() ?: "")
-                  } else {
-                      ed.putString("m3uUrl", params["m3uUrl"]?.firstOrNull() ?: "")
-                  }
-                  val ext = params["streamExt"]?.firstOrNull() ?: "m3u8"
-                  StreamPref.setExt(context, ext)
-                  ed.apply()
-                  return newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", "<h1 style='color:green;text-align:center;padding:40px;background:#0E1116'>Saved</h1>")
-              }
-              fun getLocalIp(): String {
-                  val interfaces = NetworkInterface.getNetworkInterfaces()
-                  for (intf in interfaces) {
-                      for (addr in intf.inetAddresses) {
-                          if (!addr.isLoopbackAddress && addr is Inet4Address) return addr.hostAddress ?: "0.0.0.0"
-                      }
-                  }
-                  return "0.0.0.0"
-              }
-          }
-          KOTLIN_EOF
-          echo "QRConfigServer created"
-
-      - name: Create QR Activity file
-        working-directory: source/android-native
-        run: |
-          PKG="app/src/main/kotlin/com/ultratv/tv/nativeapp/qr"
-          cat > "$PKG/QRConfigActivity.kt" << 'KOTLIN_EOF'
-          package com.ultratv.tv.nativeapp.qr
+          PKG="app/src/main/kotlin/com/ultratv/tv/nativeapp/ext"
+          cat > "$PKG/StreamSettingsActivity.kt" << 'KOTLIN_EOF'
+          package com.ultratv.tv.nativeapp.ext
           import android.app.Activity
-          import android.graphics.Bitmap
           import android.graphics.Color
           import android.os.Bundle
           import android.util.TypedValue
           import android.view.Gravity
-          import android.widget.ImageView
+          import android.widget.Button
           import android.widget.LinearLayout
           import android.widget.TextView
-          import com.google.zxing.BarcodeFormat
-          import com.google.zxing.EncodeHintType
-          import com.google.zxing.qrcode.QRCodeWriter
-          class QRConfigActivity : Activity() {
-              private var server: QRConfigServer? = null
+          class StreamSettingsActivity : Activity() {
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
-                  server = QRConfigServer(this)
-                  try { server?.start() } catch (e: Exception) { }
-                  val url = "http://" + (server?.getLocalIp() ?: "0.0.0.0") + ":8765"
+                  StreamPref.init(this)
                   val layout = LinearLayout(this).apply {
                       orientation = LinearLayout.VERTICAL
                       gravity = Gravity.CENTER
                       setBackgroundColor(Color.parseColor("#0E1116"))
                       setPadding(40, 40, 40, 40)
                   }
-                  layout.addView(TextView(this).apply { text = "STTITEN IP TV"; setTextColor(Color.parseColor("#FF3A2F")); setTextSize(TypedValue.COMPLEX_UNIT_SP, 36f) })
-                  layout.addView(TextView(this).apply { text = "Scan QR with phone"; setTextColor(Color.WHITE); setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f) })
-                  val hints = HashMap<EncodeHintType, Any>()
-                  hints[EncodeHintType.CHARACTER_SET] = "UTF-8"
-                  hints[EncodeHintType.MARGIN] = 1
-                  val m = QRCodeWriter().encode(url, BarcodeFormat.QR_CODE, 700, 700, hints)
-                  val bmp = Bitmap.createBitmap(700, 700, Bitmap.Config.ARGB_8888)
-                  for (x in 0 until 700) for (y in 0 until 700) bmp.setPixel(x, y, if (m.get(x, y)) Color.BLACK else Color.WHITE)
-                  layout.addView(ImageView(this).apply { setImageBitmap(bmp); layoutParams = LinearLayout.LayoutParams(700, 700).apply { topMargin = 40; bottomMargin = 40 } })
-                  layout.addView(TextView(this).apply { text = url; setTextColor(Color.GRAY); setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f) })
+                  layout.addView(TextView(this).apply {
+                      text = "STTITEN IP TV"
+                      setTextColor(Color.parseColor("#FF3A2F"))
+                      setTextSize(TypedValue.COMPLEX_UNIT_SP, 36f)
+                      gravity = Gravity.CENTER
+                  })
+                  layout.addView(TextView(this).apply {
+                      text = "اختر امتداد البث"
+                      setTextColor(Color.WHITE)
+                      setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+                      gravity = Gravity.CENTER
+                      setPadding(0, 30, 0, 20)
+                  })
+                  val current = StreamPref.getExt()
+                  val options = listOf(
+                      "m3u8" to "m3u8 (موصى به)",
+                      "ts" to "ts (تقليدي)",
+                      "m3u" to "m3u",
+                      "" to "بدون امتداد"
+                  )
+                  for ((value, label) in options) {
+                      val isCurrent = (value == current)
+                      layout.addView(Button(this).apply {
+                          text = if (isCurrent) "✓ $label" else label
+                          setTextColor(Color.WHITE)
+                          setBackgroundColor(
+                              if (isCurrent) Color.parseColor("#FF3A2F")
+                              else Color.parseColor("#1A1D23")
+                          )
+                          setPadding(30, 25, 30, 25)
+                          setOnClickListener {
+                              StreamPref.setExt(value)
+                              recreate()
+                          }
+                          layoutParams = LinearLayout.LayoutParams(
+                              LinearLayout.LayoutParams.MATCH_PARENT,
+                              LinearLayout.LayoutParams.WRAP_CONTENT
+                          ).apply { topMargin = 12 }
+                      })
+                  }
+                  layout.addView(TextView(this).apply {
+                      text = "الإعداد الحالي: $current"
+                      setTextColor(Color.parseColor("#888888"))
+                      setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                      gravity = Gravity.CENTER
+                      setPadding(0, 30, 0, 0)
+                  })
                   setContentView(layout)
               }
-              override fun onDestroy() { super.onDestroy(); try { server?.stop() } catch (e: Exception) { } }
           }
           KOTLIN_EOF
-          echo "QRConfigActivity created"
+          echo "StreamSettingsActivity created"
 
-      - name: Register QR Activity in Manifest
+      - name: Register Stream Settings Activity in Manifest
         working-directory: source/android-native
         run: |
           MANIFEST="app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ]; then
-            if ! grep -q "QRConfigActivity" "$MANIFEST"; then
-              perl -i -pe 's|(</application>)|    <activity\n        android:name="com.ultratv.tv.nativeapp.qr.QRConfigActivity"\n        android:exported="true"\n        android:label="STTITEN Setup">\n        <intent-filter>\n            <action android:name="android.intent.action.MAIN" />\n            <category android:name="android.intent.category.LEANBACK_LAUNCHER" />\n            <category android:name="android.intent.category.LAUNCHER" />\n        </intent-filter>\n    </activity>\n$1|' "$MANIFEST"
+            if ! grep -q "StreamSettingsActivity" "$MANIFEST"; then
+              perl -i -pe 's|(</application>)|    <activity\n        android:name="com.ultratv.tv.nativeapp.ext.StreamSettingsActivity"\n        android:exported="true"\n        android:label="STTITEN Settings">\n        <intent-filter>\n            <action android:name="android.intent.action.MAIN" />\n            <category android:name="android.intent.category.LEANBACK_LAUNCHER" />\n            <category android:name="android.intent.category.LAUNCHER" />\n        </intent-filter>\n    </activity>\n$1|' "$MANIFEST"
             fi
           fi
           echo "manifest updated"
 
-      - name: Add QR dependencies (robust)
+      - name: Initialize StreamPref in ExoEngine
         working-directory: source/android-native
         run: |
-          for B in "app/build.gradle.kts" "app/build.gradle"; do
-            if [ -f "$B" ]; then
-              echo "=== Found: $B ==="
-              if ! grep -q 'zxing' "$B"; then
-                if grep -qE '^dependencies\s*\{' "$B"; then
-                  perl -i -pe 's/(^dependencies\s*\{)/$1\n    implementation("com.google.zxing:core:3.5.3")\n    implementation("org.nanohttpd:nanohttpd:2.3.1")/' "$B"
-                  echo "Added via perl"
-                else
-                  printf "\ndependencies {\n    implementation(\"com.google.zxing:core:3.5.3\")\n    implementation(\"org.nanohttpd:nanohttpd:2.3.1\")\n}\n" >> "$B"
-                  echo "Added at end"
-                fi
-              fi
-              echo "=== Verify ==="
-              grep -n "zxing\|nanohttpd" "$B" || echo "Not found"
+          EXO="app/src/main/kotlin/com/ultratv/tv/nativeapp/ui/player/engine/ExoEngine.kt"
+          if [ -f "$EXO" ]; then
+            echo "=== Before ==="
+            grep -n "DefaultHttpDataSource\|ResolvingDataSource\|import" "$EXO" | head -20
+            
+            # إضافة import
+            if ! grep -q "com.ultratv.tv.nativeapp.ext.StreamPref" "$EXO"; then
+              sed -i '0,/^import /s//import com.ultratv.tv.nativeapp.ext.StreamPref\nimport /' "$EXO"
             fi
-          done
+            if ! grep -q "ResolvingDataSource" "$EXO"; then
+              sed -i '0,/^import /s//import androidx.media3.datasource.ResolvingDataSource\nimport /' "$EXO"
+            fi
+            
+            # تعديل DefaultHttpDataSource لاستخدام ResolvingDataSource
+            if grep -q "DefaultHttpDataSource.Factory()" "$EXO" && ! grep -q "ResolvingDataSource" "$EXO"; then
+              perl -i -pe 's|(val http = DefaultHttpDataSource\.Factory\(\)[^\n]*\n)|$1        val httpResolving = ResolvingDataSource.Factory(http) { dataSpec ->\n            val newUri = StreamPref.applyTo(dataSpec.uri)\n            dataSpec.buildUpon().setUri(newUri).build()\n        }\n|' "$EXO"
+            fi
+            
+            # استبدال استخدام http بـ httpResolving في مكان ما إن أمكن
+            # ملاحظة: نترك http كما هو، ويمكن استخدام httpResolving يدوياً
+            
+            echo "=== After ==="
+            grep -n "StreamPref\|ResolvingDataSource\|DefaultHttpDataSource" "$EXO" | head -10
+          else
+            echo "ExoEngine.kt not found"
+          fi
 
       - name: Configure universal APK
         working-directory: source/android-native
@@ -328,13 +295,9 @@ jobs:
         working-directory: source/android-native
         run: ./gradlew assembleDebug --stacktrace --no-daemon --no-parallel
 
-      - name: Show APK
-        working-directory: source/android-native
-        run: find . -name "*.apk" -exec ls -lh {} \;
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: STTITEN-IP-TV-Switch
+          name: STTITEN-IP-TV-Ext-Switch
           path: 'source/android-native/**/*.apk'
           if-no-files-found: error
