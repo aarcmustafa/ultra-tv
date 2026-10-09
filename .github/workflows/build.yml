@@ -54,3 +54,58 @@ jobs:
           grep -rn '\.ts"' --include="*.kt" . 2>/dev/null | grep -v "*/test/*" | head -20 || true
           echo "===== الأسطر التي تحتوي /live/ ====="
           grep -rn '/live/' --include="*.kt" . 2>/dev/null | grep -v "*/test/*" | head -20 || true
+- name: Change app name and developer
+  working-directory: source/android-native
+  run: |
+    find . -name "strings.xml" -not -path "*/build/*" | while read f; do
+      sed -i 's|<string name="app_name">[^<]*</string>|<string name="app_name">STTITEN IP TV</string>|g' "$f"
+      sed -i 's|>UTV<|>STTITEN IP TV<|g' "$f"
+      sed -i 's|>Ultra TV<|>STTITEN IP TV<|g' "$f"
+      sed -i 's|>ULTRA TV<|>STTITEN IP TV<|g' "$f"
+    done
+    mkdir -p app/src/main/res/values-ar
+    cat > app/src/main/res/values-ar/strings.xml << 'EOF'
+    <?xml version="1.0" encoding="utf-8"?>
+    <resources>
+        <string name="app_name">STTITEN IP TV</string>
+        <string name="developer_name">جلولي مصطفى</string>
+        <string name="developer_name_latin">Djellouli Mustafa</string>
+    </resources>
+    EOF
+    echo "done"
+
+- name: Fix TopBar text
+  working-directory: source/android-native
+  run: |
+    TARGET="app/src/main/kotlin/com/ultratv/tv/nativeapp/ui/settings/CloudPairingDialog.kt"
+    if [ -f "$TARGET" ]; then
+      sed -i 's|"ULTRA TV"|"STTITEN IP TV"|g' "$TARGET"
+      sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$TARGET"
+      sed -i 's|"UTV"|"STTITEN IP TV"|g' "$TARGET"
+      sed -i 's|letterSpacing = TextUnit(1\.7f, TextUnitType\.Sp)|letterSpacing = TextUnit(0f, TextUnitType.Sp)|g' "$TARGET"
+    fi
+
+- name: Global replace in Kotlin
+  working-directory: source/android-native
+  run: |
+    find . -name "*.kt" -not -path "*/build/*" | while read f; do
+      sed -i 's|"ULTRA TV"|"STTITEN IP TV"|g' "$f"
+      sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$f"
+      sed -i 's|"UltraTV"|"STTITEN IP TV"|g' "$f"
+      sed -i 's|"UTV"|"STTITEN IP TV"|g' "$f"
+    done
+    echo "done"
+
+- name: Fix stream URL extension (.ts to .m3u8)
+  working-directory: source/android-native
+  run: |
+    find . -name "*.kt" -not -path "*/build/*" -not -path "*/test/*" | while read f; do
+      if grep -qE '\.ts"|/live/' "$f" 2>/dev/null; then
+        echo "--- modifying: $f ---"
+        sed -i 's|\.ts"|.m3u8"|g' "$f"
+        sed -i "s|\.ts'|.m3u8'|g" "$f"
+        sed -i 's|}\.ts|}.m3u8|g' "$f"
+      fi
+    done
+    echo "===== remaining .ts ====="
+    find . -name "*.kt" -not -path "*/build/*" -not -path "*/test/*" | xargs grep -l '\.ts"' 2>/dev/null | head -5 || echo "none"
