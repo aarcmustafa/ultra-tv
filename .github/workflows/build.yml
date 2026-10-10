@@ -84,4 +84,63 @@ jobs:
             sed -i 's|"UTV"|"STTITEN IP TV"|g' "$f"
           done
           echo "done"
-        
+      - name: Generate STTITEN icons for ALL folders
+      working-directory: source/android-native
+  run: |
+    RES="app/src/main/res"
+    mkdir -p "$RES/drawable-nodpi"
+    convert -size 1200x400 xc:transparent -font DejaVu-Sans-Bold -pointsize 110 -fill "#FFFFFF" -gravity center -annotate +0+0 "STTITEN IP TV" "$RES/drawable-nodpi/sttiten_logo.png"
+    convert -size 512x512 xc:"#0E1116" -font DejaVu-Sans-Bold -pointsize 90 -fill "#FF3A2F" -gravity center -annotate +0-60 "STTITEN" -pointsize 55 -fill "#FFFFFF" -annotate +0+60 "IP TV" "$RES/drawable-nodpi/sttiten_icon.png"
+    for D in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+      N="${D%%:*}"; S="${D##*:}"
+      convert -size ${S}x${S} xc:"#0E1116" -font DejaVu-Sans-Bold -pointsize $((S*18/100)) -fill "#FF3A2F" -gravity center -annotate +0-$((S*8/100)) "STT" -pointsize $((S*12/100)) -fill "#FFFFFF" -annotate +0+$((S*10/100)) "IP TV" "/tmp/icon_${S}.png"
+      M="$RES/mipmap-$N"
+      mkdir -p "$M"
+      cp "/tmp/icon_${S}.png" "$M/ic_launcher.png"
+      cp "/tmp/icon_${S}.png" "$M/ic_launcher_round.png"
+      cp "/tmp/icon_${S}.png" "$M/ic_launcher_foreground.png"
+      for DIR in "$RES/drawable-port-$N" "$RES/drawable-land-$N"; do
+        mkdir -p "$DIR"
+        find "$DIR" -name "*.png" 2>/dev/null | while read P; do cp "/tmp/icon_${S}.png" "$P"; done
+      done
+    done
+    find "$RES" -name "*.png" \( -path "*/mipmap-*" -o -path "*/drawable-port-*" -o -path "*/drawable-land-*" \) 2>/dev/null | while read P; do
+      D=$(basename $(dirname "$P"))
+      case "$D" in *mdpi) S=48 ;; *hdpi) S=72 ;; *xhdpi) S=96 ;; *xxhdpi) S=144 ;; *xxxhdpi) S=192 ;; *) S=96 ;; esac
+      cp "/tmp/icon_${S}.png" "$P"
+    done
+    echo "All icons generated"
+
+    - name: Replace XML logos in drawable folders
+  working-directory: source/android-native
+  run: |
+    for DIR in app/src/main/res/drawable*; do
+      case "$DIR" in *nodpi*) continue ;; esac
+      [ -d "$DIR" ] || continue
+      for F in "$DIR"/*.xml; do
+        [ -f "$F" ] || continue
+        BN=$(basename "$F")
+        case "$BN" in
+          ic_opensubtitles_logo.xml|ic_tmdb_logo.xml) continue ;;
+          *background*|*_bg*) continue ;;
+        esac
+        if grep -qE "<vector|<shape|<layer-list" "$F" 2>/dev/null; then
+          if echo "$BN" | grep -qiE "launcher|icon"; then IMG="sttiten_icon"; else IMG="sttiten_logo"; fi
+          printf '<?xml version="1.0" encoding="utf-8"?>\n<bitmap xmlns:android="http://schemas.android.com/apk/res/android" android:src="@drawable/%s" android:gravity="center" />\n' "$IMG" > "$F"
+        fi
+      done
+    done
+    if [ -d "app/src/main/res/mipmap-anydpi-v26" ]; then
+      for F in app/src/main/res/mipmap-anydpi-v26/*.xml; do
+        [ -f "$F" ] || continue
+        [ "$(basename $F)" = "ic_launcher_round.xml" ] && continue
+        printf '<?xml version="1.0" encoding="utf-8"?>\n<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n  <background android:drawable="@color/sttiten_background" />\n  <foreground android:drawable="@drawable/sttiten_icon" />\n</adaptive-icon>\n' > "$F"
+      done
+    fi
+    echo "XML replaced" - name: Add color resource
+                        working-directory: source/android-native
+  run: |
+    C="app/src/main/res/values/colors.xml"
+    [ -f "$C" ] || printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n</resources>\n' > "$C"
+    grep -q "sttiten_background" "$C" || sed -i 's|</resources>|    <color name="sttiten_background">#0E1116</color>\n</resources>|' "$C"
+    echo "color added"
