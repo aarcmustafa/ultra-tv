@@ -324,7 +324,7 @@ jobs:
     KOTLIN_EOF
     echo "StreamSettingsActivity created"
 
-- name: Patch MainActivity to open Settings on MENU key
+       - name: Patch MainActivity to open Settings on MENU key
   working-directory: source/android-native
   run: |
     MAIN=$(find app/src/main/kotlin -name "MainActivity.kt" | head -1)
@@ -346,7 +346,7 @@ jobs:
     echo "=== After patch ==="
     grep -n "onKeyDown\|StreamSettingsActivity\|Intent" "$MAIN" | head -10
 
-- name: Configure Manifest (Settings as launcher, Main as normal)
+       - name: Configure Manifest (Settings as launcher, Main as normal)
   working-directory: source/android-native
   run: |
     MANIFEST="app/src/main/AndroidManifest.xml"
@@ -360,7 +360,7 @@ jobs:
     grep -c "LAUNCHER" "$MANIFEST"
     grep -B 1 -A 3 "StreamSettingsActivity" "$MANIFEST" | head -12
 
-- name: Patch XtreamClient
+       - name: Patch XtreamClient
   working-directory: source/android-native
   run: |
     XT="app/src/main/kotlin/com/ultratv/tv/nativeapp/data/xtream/XtreamClient.kt"
@@ -372,7 +372,7 @@ jobs:
     echo "=== Verify ==="
     grep -n "StreamPref.getSuffix" "$XT" || echo "FAILED"
 
-- name: Configure universal APK
+    - name: Configure universal APK
   working-directory: source/android-native
   run: |
     A="app/build.gradle.kts"
@@ -385,7 +385,7 @@ jobs:
       fi
     fi
 
-- name: Setup Gradle properties
+    - name: Setup Gradle properties
   working-directory: source/android-native
   run: |
     echo "org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8" >> gradle.properties
@@ -395,17 +395,11 @@ jobs:
     echo "android.useAndroidX=true" >> gradle.properties
     echo "kotlin.code.style=official" >> gradle.properties
 
-- name: Grant execute permission
+     - name: Grant execute permission
   working-directory: source/android-native
-  run: chmod +x gradlew
-
-- name: Build APK
-  working-directory: source/android-native
-  run: ./gradlew assembleDebug --stacktrace --no-daemon --no-parallel
-
-- name: Upload APK
-  uses: actions/upload-artifact@v4
-  with:
-    name: STTITEN-IP-TV-Final
-    path: 'source/android-native/**/*.apk'
-    if-no-files-found: error
+  run: chmod +x gradlew- name: Build APK
+working-directory: source/android-native 
+run:./gradlew assembleDebug --stacktrace --no-daemon --no-parallel- name:Upload APK uses:actions/upload-artifact@v4 with:
+          name: STTITEN-IP-TV-Final
+          path: source/android-native/**/*.apk
+          if-no-files-found: error
