@@ -110,8 +110,7 @@ jobs:
       cp "/tmp/icon_${S}.png" "$P"
     done
     echo "All icons generated"
-
-- name: Replace XML logos in drawable folders
+    name: Replace XML logos in drawable folders
   working-directory: source/android-native
   run: |
     for DIR in app/src/main/res/drawable*; do
@@ -138,8 +137,7 @@ jobs:
       done
     fi
     echo "XML replaced"
-
-- name: Add color resource
+    - name: Add color resource
   working-directory: source/android-native
   run: |
     C="app/src/main/res/values/colors.xml"
@@ -191,8 +189,7 @@ jobs:
     }
     KOTLIN_EOF
     echo "helpers created"
-
-- name: Create StreamSettingsActivity
+    - name: Create StreamSettingsActivity
   working-directory: source/android-native
   run: |
     PKG="app/src/main/kotlin/com/ultratv/tv/nativeapp/ext"
@@ -295,8 +292,7 @@ jobs:
     }
     KOTLIN_EOF
     echo "StreamSettingsActivity created"
-
-- name: Patch MainActivity MENU key
+    - name: Patch MainActivity MENU key
   working-directory: source/android-native
   run: |
     MAIN=$(find app/src/main/kotlin -name "MainActivity.kt" | head -1)
@@ -308,8 +304,7 @@ jobs:
       perl -i -pe 's|(override fun onCreate)|override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {\n        if (keyCode == android.view.KeyEvent.KEYCODE_MENU || keyCode == android.view.KeyEvent.KEYCODE_SETTINGS || keyCode == android.view.KeyEvent.KEYCODE_INFO || keyCode == android.view.KeyEvent.KEYCODE_PROG_RED) {\n            try { val i = Intent(this, StreamSettingsActivity::class.java); i.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT); startActivity(i); return true } catch (e: Exception) { }\n        }\n        return super.onKeyDown(keyCode, event)\n    }\n    $1|' "$MAIN"
     fi
     grep -n "onKeyDown\|StreamSettingsActivity" "$MAIN" | head -5
-
-- name: Configure Manifest
+    - name: Configure Manifest
   working-directory: source/android-native
   run: |
     MANIFEST="app/src/main/AndroidManifest.xml"
@@ -321,16 +316,14 @@ jobs:
     perl -0777 -i -pe 's|(<activity[^>]*android:name="com\.ultratv\.tv\.nativeapp\.MainActivityCobalt"[^>]*>)(.*?)<intent-filter>.*?</intent-filter>|$1$2|gs' "$MANIFEST"
     echo "LAUNCHER count:"
     grep -c "LAUNCHER" "$MANIFEST"
-
-- name: Patch XtreamClient
+    - name: Patch XtreamClient
   working-directory: source/android-native
   run: |
     XT="app/src/main/kotlin/com/ultratv/tv/nativeapp/data/xtream/XtreamClient.kt"
     [ ! -f "$XT" ] && echo "ERROR: not found" && exit 1
     sed -i 's|pathPrefix(p, "live")}\$sid\.ts"|pathPrefix(p, "live")}$sid${com.ultratv.tv.nativeapp.ext.StreamPref.getSuffix()}"|g' "$XT"
     grep -n "StreamPref.getSuffix" "$XT" || echo "FAILED"
-
-- name: Configure universal APK
+    - name: Configure universal APK
   working-directory: source/android-native
   run: |
     A="app/build.gradle.kts"
@@ -338,8 +331,7 @@ jobs:
       grep -q 'abiFilters' "$A" || perl -i -pe 's/(defaultConfig\s*\{)/$1\n        ndk {\n            abiFilters += listOf("arm64-v8a", "armeabi-v7a")\n        }/' "$A"
       grep -q 'useLegacyPackaging' "$A" || perl -i -pe 's/(android\s*\{)/$1\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' "$A"
     fi
-
-- name: Setup Gradle properties
+    - name: Setup Gradle properties
   working-directory: source/android-native
   run: |
     echo "org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8" >> gradle.properties
@@ -348,18 +340,11 @@ jobs:
     echo "org.gradle.caching=true" >> gradle.properties
     echo "android.useAndroidX=true" >> gradle.properties
     echo "kotlin.code.style=official" >> gradle.properties
-
-- name: Grant execute permission
-  working-directory: source/android-native
-  run: chmod +x gradlew
-
-- name: Build APK
-  working-directory: source/android-native
-  run: ./gradlew assembleDebug --stacktrace --no-daemon --no-parallel
-
-- name: Upload APK
-  uses: actions/upload-artifact@v4
-  with:
+    - name: Grant execute permission
+    working-directory: source/android-native
+    run:chmod +x gradlew- name: Build APK working-directory: source/android-native
+  run:./gradlew assembleDebug --stacktrace --no-daemon --no-parallel- name: Upload APK
+  uses: actions/upload-artifact@v4 with:
     name: STTITEN-IP-TV-Final
     path: 'source/android-native/**/*.apk'
     if-no-files-found: error
