@@ -328,7 +328,7 @@ jobs:
           KOTLIN_EOF
           echo "StreamSettingsActivity created"
 
-      # ============================================================
+            # ============================================================
       # 🔥 Patch MainActivity: MENU key opens Settings
       # ============================================================
       - name: Patch MainActivity to open Settings on MENU key
@@ -359,6 +359,29 @@ jobs:
           echo "=== After patch ==="
           grep -n "onKeyDown\|StreamSettingsActivity\|Intent" "$MAIN" | head -10
 
+      # ============================================================
+      # Configure Manifest
+      # ============================================================
+      - name: Configure Manifest (Settings as launcher, Main as normal)
+        working-directory: source/android-native
+        run: |
+          MANIFEST="app/src/main/AndroidManifest.xml"
+          
+          # إضافة Provider + Activity Settings
+          if ! grep -q "StreamSettingsActivity" "$MANIFEST"; then
+            perl -i -pe 's|(</application>)|    <provider\n        android:name="com.ultratv.tv.nativeapp.ext.StreamPrefInitProvider"\n        android:authorities="com.ultratv.tv.nativeapp.streampref"\n        android:exported="false" />\n    <activity\n        android:name="com.ultratv.tv.nativeapp.ext.StreamSettingsActivity"\n        android:exported="true"\n        android:label="STTITEN IP TV"\n        android:icon="@drawable/sttiten_icon">\n        <intent-filter>\n            <action android:name="android.intent.action.MAIN" />\n            <category android:name="android.intent.category.LEANBACK_LAUNCHER" />\n            <category android:name="android.intent.category.LAUNCHER" />\n        </intent-filter>\n    </activity>\n$1|' "$MANIFEST"
+          fi
+          
+          # إزالة LAUNCHER من MainActivity
+          perl -0777 -i -pe 's|(<activity[^>]*android:name="com\.ultratv\.tv\.nativeapp\.MainActivity"[^>]*>)(.*?)<intent-filter>.*?</intent-filter>|$1$2|gs' "$MANIFEST"
+          
+          # التحقق من أن MainActivity موجودة بدون launcher
+          perl -0777 -i -pe 's|(<activity[^>]*android:name="com\.ultratv\.tv\.nativeapp\.MainActivityPetrol"[^>]*>)(.*?)<intent-filter>.*?</intent-filter>|$1$2|gs' "$MANIFEST"
+          perl -0777 -i -pe 's|(<activity[^>]*android:name="com\.ultratv\.tv\.nativeapp\.MainActivityCobalt"[^>]*>)(.*?)<intent-filter>.*?</intent-filter>|$1$2|gs' "$MANIFEST"
+          
+          echo "=== Verify ==="
+          grep -c "LAUNCHER" "$MANIFEST"
+          grep -B 1 -A 3 "StreamSettingsActivity" "$MANIFEST" | head -12
       # ============================================================
       # Configure Manifest
       # ============================================================
