@@ -1,1 +1,86 @@
-1
+name: Build STTITEN IP TV
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Ultra TV
+        uses: actions/checkout@v4
+        with:
+          repository: khalilbenaz/ultra-tv
+          ref: main
+          path: source
+          fetch-depth: 1
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          java-package: 'jdk'
+          architecture: 'x64'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+
+      - name: Accept Android SDK Licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Install Android SDK components
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" || true
+
+      - name: Install ImageMagick
+        run: sudo apt-get update -qq && sudo apt-get install -y imagemagick fonts-dejavu
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: sttiten-icons-${{ hashFiles('source/android-native/**/*.gradle*') }}
+          restore-keys: sttiten-icons-
+
+      - name: Change app name and developer
+        working-directory: source/android-native
+        run: |
+          find . -name "strings.xml" -not -path "*/build/*" | while read f; do
+            sed -i 's|<string name="app_name">[^<]*</string>|<string name="app_name">STTITEN IP TV</string>|g' "$f"
+          done
+          mkdir -p app/src/main/res/values-ar
+          cat > app/src/main/res/values-ar/strings.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="app_name">STTITEN IP TV</string>
+              <string name="developer_name">جلولي مصطفى</string>
+              <string name="developer_name_latin">Djellouli Mustafa</string>
+          </resources>
+          EOF
+          echo "done"
+
+      - name: Fix TopBar text
+        working-directory: source/android-native
+        run: |
+          T="app/src/main/kotlin/com/ultratv/tv/nativeapp/ui/settings/CloudPairingDialog.kt"
+          if [ -f "$T" ]; then
+            sed -i 's|"ULTRA TV"|"STTITEN IP TV"|g' "$T"
+            sed -i 's|letterSpacing = TextUnit(1\.7f, TextUnitType\.Sp)|letterSpacing = TextUnit(0f, TextUnitType.Sp)|g' "$T"
+          fi
+
+      - name: Global replace in Kotlin
+        working-directory: source/android-native
+        run: |
+          find . -name "*.kt" -not -path "*/build/*" | while read f; do
+            sed -i 's|"ULTRA TV"|"STTITEN IP TV"|g' "$f"
+            sed -i 's|"Ultra TV"|"STTITEN IP TV"|g' "$f"
+            sed -i 's|"UltraTV"|"STTITEN IP TV"|g' "$f"
+            sed -i 's|"UTV"|"STTITEN IP TV"|g' "$f"
+          done
+          echo "done"
