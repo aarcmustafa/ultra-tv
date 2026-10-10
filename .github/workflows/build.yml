@@ -296,4 +296,124 @@ jobs:
               }
           }
           KOTLIN_EOF
-          echo "StreamSettingsActivity created"
+          echo "StreamSettingsActivity created" 
+
+- name: Patch MainActivity MENU key
+  working-directory: source/android-native
+  run: |
+    MAIN=$(find app/src/main/kotlin -name "MainActivity.kt" | head -1)
+    [ -z "$MAIN" ] && echo "ERROR: not found" && exit 0
+    echo "Found: $MAIN"
+    grep -q "com.ultratv.tv.nativeapp.ext.StreamSettingsActivity" "$MAIN" || sed -i '0,/^import /s//import com.ultratv.tv.nativeapp.ext.StreamSettingsActivity\nimport /' "$MAIN"
+    grep -q "android.content.Intent" "$MAIN" || sed -i '0,/^import /s//import android.content.Intent\nimport /' "$MAIN"
+    if ! grep -q "onKeyDown" "$MAIN"; then
+      python3 - "$MAIN" <<'PY'
+    import sys, pathlib
+    p = pathlib.Path(sys.argv[1])
+    src = p.read_text(encoding="utf-8")
+    block = '''    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+            if (keyCode == android.view.KeyEvent.KEYCODE_MENU ||
+                keyCode == android.view.KeyEvent.KEYCODE_SETTINGS ||
+                keyCode == android.view.KeyEvent.KEYCODE_INFO ||
+                keyCode == android.view.KeyEvent.KEYCODE_PROG_RED) {
+                try {
+                    val i = Intent(this, StreamSettingsActivity::class.java)
+                    i.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                    startActivity(i)
+                    return true
+                } catch (e: Exception) { }
+            }
+            return super.onKeyDown(keyCode, event)
+        }
+
+    '''
+    needle = "    override fun onCreate"
+    if needle not in src:
+        needle = "override fun onCreate"
+    if needle not in src:
+        sys.exit("ERROR: could not find onCreate in " + str(p))
+    src = src.replace(needle, block + needle, 1)
+    p.write_text(src, encoding="utf-8")
+    print("patched onKeyDown")
+    PY
+    fi
+    grep -n "onKeyDown\|StreamSettingsActivity" "$MAIN" | head -5
+
+- name: Configure Manifest
+  working-directory: source/android-native
+  run: |
+    MANIFEST="app/src/main/AndroidManifest.xml"
+    if ! grep -q "StreamSettingsActivity" "$MANIFEST"; then
+      python3 - "$MANIFEST" <<'PY'
+    import sys, pathlib
+    p = pathlib.Path(sys.argv[1])
+    src = p.read_text(encoding="utf-8")
+    addition = '''    <provider android:name="com.ultratv.tv.nativeapp.ext.StreamPrefInitProvider" android:authorities="com.ultratv.tv.nativeapp.streampref" android:exported="false" />
+        <activity android:name="com.ultratv.tv.nativeapp.ext.StreamSettingsActivity" android:exported="true" android:label="STTITEN IP TV" android:icon="@drawable/sttiten_icon">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    '''
+    src = src.replace("</application>", addition + "</application>", 1)
+    p.write_text(src, encoding="utf-8")
+    print("manifest patched")
+    PY
+    fi
+    # إزالة intent-filter من MainActivity الأساسية
+    python3 - "$MANIFEST" <<'PY'
+    import re, sys, pathlib
+    p = pathlib.Path(sys.argv[1])
+    src = p.read_text(encoding="utf-8")
+    for name in ("MainActivity", "MainActivityPetrol", "MainActivityCobalt"):
+        pattern = r'(<activity[^>]*android:name="com\.ultratv\.tv\.nativeapp\.' + name + r'"[^>]*>)(.*?)<intent-filter>.*?</intent-filter>'
+        src = re.sub(pattern, r'\1\2', src, flags=re.S)
+    p.write_text(src, encoding="utf-8")
+    print("main activities cleaned")
+    PY
+    echo "LAUNCHER count:"
+    grep -c "LAUNCHER" "$MANIFEST" || true
+
+- name: Patch XtreamClient
+  working-directory: source/android-native
+  run: |
+    XT="app/src/main/kotlin/com/ultratv/tv/nativeapp/data/xtream/XtreamClient.kt"
+    [ ! -f "$XT" ] && echo "ERROR: not found" && exit 1
+    sed -i 's|pathPrefix(p, "live")}\$sid\.ts"|pathPrefix(p, "live")}$sid${com.ultratv.tv.nativeapp.ext.StreamPref.getSuffix()}"|g' "$XT"
+    grep -n "StreamPref.getSuffix" "$XT" || echo "FAILED"
+
+- name: Configure universal APK
+  working-directory: source/android-native
+  run: |
+    A="app/build.gradle.kts"
+    if [ -f "$A" ]; then
+      grep -q 'abiFilters' "$A" || perl -i -pe 's/(defaultConfig\s*\{)/$1\n        ndk {\n            abiFilters += listOf("arm64-v8a", "armeabi-v7a")\n        }/' "$A"
+      grep -q 'useLegacyPackaging' "$A" || perl -i -pe 's/(android\s*\{)/$1\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' "$A"
+    fi
+
+- name: Setup Gradle properties
+  working-directory: source/android-native
+  run: |
+    echo "org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8" >> gradle.properties
+    echo "org.gradle.daemon=false" >> gradle.properties
+    echo "org.gradle.parallel=false" >> gradle.properties
+    echo "org.gradle.caching=true" >> gradle.properties
+    echo "android.useAndroidX=true" >> gradle.properties
+    echo "kotlin.code.style=official" >> gradle.properties
+
+- name: Grant execute permission
+  working-directory: source/android-native
+  run: chmod +x gradlew
+
+- name: Build APK
+  working-directory: source/android-native
+  run: ./gradlew assembleDebug --stacktrace --no-daemon --no-parallel
+
+- name: Upload APK
+  uses: actions/upload-artifact@v4
+  with:
+    name: STTITEN-IP-TV-Final
+    path: 'source/android-native/**/*.apk'
+    if-no-files-found: error
