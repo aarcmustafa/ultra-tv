@@ -138,8 +138,8 @@ jobs:
       done
     fi
     echo "XML replaced"
-
-- name: Add color resource
+    
+    - name: Add color resource
   working-directory: source/android-native
   run: |
     C="app/src/main/res/values/colors.xml"
