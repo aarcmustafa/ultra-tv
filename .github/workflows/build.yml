@@ -85,7 +85,7 @@ jobs:
           done
           echo "done"
       - name: Generate STTITEN icons for ALL folders
-  working-directory: source/android-native
+        working-directory: source/android-native
   run: |
     RES="app/src/main/res"
     mkdir -p "$RES/drawable-nodpi"
