@@ -110,7 +110,6 @@ jobs:
       cp "/tmp/icon_${S}.png" "$P"
     done
     echo "All icons generated"
-
 - name: Replace XML logos in drawable folders
   working-directory: source/android-native
   run: |
