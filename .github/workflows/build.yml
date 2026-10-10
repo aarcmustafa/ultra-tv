@@ -45,8 +45,8 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: sttiten-merge2-${{ hashFiles('source/android-native/**/*.gradle*') }}
-          restore-keys: sttiten-merge2-
+          key: sttiten-icons-${{ hashFiles('source/android-native/**/*.gradle*') }}
+          restore-keys: sttiten-icons-
 
       - name: Change app name and developer
         working-directory: source/android-native
@@ -84,128 +84,115 @@ jobs:
             sed -i 's|"UTV"|"STTITEN IP TV"|g' "$f"
           done
           echo "done"
+          - name: Generate STTITEN icons for ALL folders
+  working-directory: source/android-native
+  run: |
+    RES="app/src/main/res"
+    mkdir -p "$RES/drawable-nodpi"
+    convert -size 1200x400 xc:transparent -font DejaVu-Sans-Bold -pointsize 110 -fill "#FFFFFF" -gravity center -annotate +0+0 "STTITEN IP TV" "$RES/drawable-nodpi/sttiten_logo.png"
+    convert -size 512x512 xc:"#0E1116" -font DejaVu-Sans-Bold -pointsize 90 -fill "#FF3A2F" -gravity center -annotate +0-60 "STTITEN" -pointsize 55 -fill "#FFFFFF" -annotate +0+60 "IP TV" "$RES/drawable-nodpi/sttiten_icon.png"
+    for D in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+      N="${D%%:*}"; S="${D##*:}"
+      convert -size ${S}x${S} xc:"#0E1116" -font DejaVu-Sans-Bold -pointsize $((S*18/100)) -fill "#FF3A2F" -gravity center -annotate +0-$((S*8/100)) "STT" -pointsize $((S*12/100)) -fill "#FFFFFF" -annotate +0+$((S*10/100)) "IP TV" "/tmp/icon_${S}.png"
+      M="$RES/mipmap-$N"
+      mkdir -p "$M"
+      cp "/tmp/icon_${S}.png" "$M/ic_launcher.png"
+      cp "/tmp/icon_${S}.png" "$M/ic_launcher_round.png"
+      cp "/tmp/icon_${S}.png" "$M/ic_launcher_foreground.png"
+      for DIR in "$RES/drawable-port-$N" "$RES/drawable-land-$N"; do
+        mkdir -p "$DIR"
+        find "$DIR" -name "*.png" 2>/dev/null | while read P; do cp "/tmp/icon_${S}.png" "$P"; done
+      done
+    done
+    find "$RES" -name "*.png" \( -path "*/mipmap-*" -o -path "*/drawable-port-*" -o -path "*/drawable-land-*" \) 2>/dev/null | while read P; do
+      D=$(basename $(dirname "$P"))
+      case "$D" in *mdpi) S=48 ;; *hdpi) S=72 ;; *xhdpi) S=96 ;; *xxhdpi) S=144 ;; *xxxhdpi) S=192 ;; *) S=96 ;; esac
+      cp "/tmp/icon_${S}.png" "$P"
+    done
+    echo "All icons generated"
 
-      - name: Create STTITEN PNG assets
-        working-directory: source/android-native
-        run: |
-          mkdir -p app/src/main/res/drawable-nodpi
-          convert -size 1200x400 xc:transparent \
-            -font DejaVu-Sans-Bold -pointsize 110 \
-            -fill "#FFFFFF" -gravity center \
-            -annotate +0+0 "STTITEN IP TV" \
-            app/src/main/res/drawable-nodpi/sttiten_logo.png
-          convert -size 512x512 xc:"#0E1116" \
-            -font DejaVu-Sans-Bold -pointsize 80 \
-            -fill "#FFFFFF" -gravity center \
-            -annotate +0+0 "STTITEN" \
-            app/src/main/res/drawable-nodpi/sttiten_icon.png
-          ls -la app/src/main/res/drawable-nodpi/
+- name: Replace XML logos in drawable folders
+  working-directory: source/android-native
+  run: |
+    for DIR in app/src/main/res/drawable*; do
+      case "$DIR" in *nodpi*) continue ;; esac
+      [ -d "$DIR" ] || continue
+      for F in "$DIR"/*.xml; do
+        [ -f "$F" ] || continue
+        BN=$(basename "$F")
+        case "$BN" in
+          ic_opensubtitles_logo.xml|ic_tmdb_logo.xml) continue ;;
+          *background*|*_bg*) continue ;;
+        esac
+        if grep -qE "<vector|<shape|<layer-list" "$F" 2>/dev/null; then
+          if echo "$BN" | grep -qiE "launcher|icon"; then IMG="sttiten_icon"; else IMG="sttiten_logo"; fi
+          printf '<?xml version="1.0" encoding="utf-8"?>\n<bitmap xmlns:android="http://schemas.android.com/apk/res/android" android:src="@drawable/%s" android:gravity="center" />\n' "$IMG" > "$F"
+        fi
+      done
+    done
+    if [ -d "app/src/main/res/mipmap-anydpi-v26" ]; then
+      for F in app/src/main/res/mipmap-anydpi-v26/*.xml; do
+        [ -f "$F" ] || continue
+        [ "$(basename $F)" = "ic_launcher_round.xml" ] && continue
+        printf '<?xml version="1.0" encoding="utf-8"?>\n<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n  <background android:drawable="@color/sttiten_background" />\n  <foreground android:drawable="@drawable/sttiten_icon" />\n</adaptive-icon>\n' > "$F"
+      done
+    fi
+    echo "XML replaced"
 
-      - name: Replace XML logos in all drawable folders
-        working-directory: source/android-native
-        run: |
-          for DIR in app/src/main/res/drawable*; do
-            case "$DIR" in *nodpi*) continue ;; esac
-            [ -d "$DIR" ] || continue
-            for F in "$DIR"/*.xml; do
-              [ -f "$F" ] || continue
-              BN=$(basename "$F")
-              case "$BN" in
-                ic_opensubtitles_logo.xml|ic_tmdb_logo.xml) continue ;;
-                *background*|*_bg*) continue ;;
-              esac
-              if grep -qE "<vector|<shape|<layer-list" "$F" 2>/dev/null; then
-                echo "Replacing: $F"
-                if echo "$BN" | grep -qiE "launcher|icon"; then IMG="sttiten_icon"; else IMG="sttiten_logo"; fi
-                cat > "$F" << XMLEOF
-          <?xml version="1.0" encoding="utf-8"?>
-          <bitmap xmlns:android="http://schemas.android.com/apk/res/android"
-              android:src="@drawable/$IMG"
-              android:gravity="center" />
-          XMLEOF
-              fi
-            done
-          done
-          if [ -d "app/src/main/res/mipmap-anydpi-v26" ]; then
-            for F in app/src/main/res/mipmap-anydpi-v26/*.xml; do
-              [ -f "$F" ] || continue
-              BN=$(basename "$F")
-              [ "$BN" = "ic_launcher_round.xml" ] && continue
-              cat > "$F" << XMLEOF
-          <?xml version="1.0" encoding="utf-8"?>
-          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-              <background android:drawable="@color/sttiten_background" />
-              <foreground android:drawable="@drawable/sttiten_icon" />
-          </adaptive-icon>
-          XMLEOF
-            done
-          fi
-          echo "XML replaced"
+- name: Add color resource
+  working-directory: source/android-native
+  run: |
+    C="app/src/main/res/values/colors.xml"
+    [ -f "$C" ] || printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n</resources>\n' > "$C"
+    grep -q "sttiten_background" "$C" || sed -i 's|</resources>|    <color name="sttiten_background">#0E1116</color>\n</resources>|' "$C"
+    echo "color added"
+    - name: Create StreamPref
+  working-directory: source/android-native
+  run: |
+    PKG="app/src/main/kotlin/com/ultratv/tv/nativeapp/ext"
+    mkdir -p "$PKG"
+    cat > "$PKG/StreamPref.kt" << 'KOTLIN_EOF'
+    package com.ultratv.tv.nativeapp.ext
+    import android.content.Context
+    object StreamPref {
+        private const val PREFS = "sttiten_ext"
+        private const val KEY = "stream_ext"
+        private const val DEFAULT = "m3u8"
+        @Volatile private var appCtx: Context? = null
+        @Volatile private var cached: String? = null
+        fun init(context: Context) { if (appCtx == null) appCtx = context.applicationContext }
+        fun getExt(): String {
+            cached?.let { return it }
+            val c = appCtx ?: return DEFAULT
+            val v = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, DEFAULT) ?: DEFAULT
+            cached = v
+            return v
+        }
+        fun getSuffix(): String = if (getExt().isEmpty()) "" else "." + getExt()
+        fun setExt(ext: String) {
+            cached = ext
+            appCtx?.getSharedPreferences(PREFS, Context.MODE_PRIVATE)?.edit()?.putString(KEY, ext)?.apply()
+        }
+    }
+    KOTLIN_EOF
+    cat > "$PKG/StreamPrefInitProvider.kt" << 'KOTLIN_EOF'
+    package com.ultratv.tv.nativeapp.ext
+    import android.content.ContentProvider
+    import android.content.ContentValues
+    import android.database.Cursor
+    import android.net.Uri
+    class StreamPrefInitProvider : ContentProvider() {
+        override fun onCreate(): Boolean { context?.let { StreamPref.init(it) }; return true }
+        override fun query(u: Uri, p: Array<out String>?, s: String?, sa: Array<out String>?, so: String?): Cursor? = null
+        override fun getType(u: Uri): String? = null
+        override fun insert(u: Uri, v: ContentValues?): Uri? = null
+        override fun delete(u: Uri, s: String?, sa: Array<out String>?): Int = 0
+        override fun update(u: Uri, v: ContentValues?, s: String?, sa: Array<out String>?): Int = 0
+    }
+    KOTLIN_EOF
+    echo "helpers created"
 
-      - name: Add color resource
-        working-directory: source/android-native
-        run: |
-          C="app/src/main/res/values/colors.xml"
-          if [ ! -f "$C" ]; then
-            printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n</resources>\n' > "$C"
-          fi
-          if ! grep -q "sttiten_background" "$C"; then
-            sed -i 's|</resources>|    <color name="sttiten_background">#0E1116</color>\n</resources>|' "$C"
-          fi
-          echo "color added"
-
-      - name: Create StreamPref
-        working-directory: source/android-native
-        run: |
-          PKG="app/src/main/kotlin/com/ultratv/tv/nativeapp/ext"
-          mkdir -p "$PKG"
-          cat > "$PKG/StreamPref.kt" << 'KOTLIN_EOF'
-          package com.ultratv.tv.nativeapp.ext
-          import android.content.Context
-          object StreamPref {
-              private const val PREFS = "sttiten_ext"
-              private const val KEY = "stream_ext"
-              private const val DEFAULT = "m3u8"
-              @Volatile private var appCtx: Context? = null
-              @Volatile private var cached: String? = null
-              fun init(context: Context) { if (appCtx == null) appCtx = context.applicationContext }
-              fun getExt(): String {
-                  cached?.let { return it }
-                  val c = appCtx ?: return DEFAULT
-                  val v = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, DEFAULT) ?: DEFAULT
-                  cached = v
-                  return v
-              }
-              fun getSuffix(): String = if (getExt().isEmpty()) "" else "." + getExt()
-              fun setExt(ext: String) {
-                  cached = ext
-                  appCtx?.getSharedPreferences(PREFS, Context.MODE_PRIVATE)?.edit()?.putString(KEY, ext)?.apply()
-              }
-          }
-          KOTLIN_EOF
-          echo "StreamPref created"
-
-      - name: Create StreamPrefInitProvider
-        working-directory: source/android-native
-        run: |
-          PKG="app/src/main/kotlin/com/ultratv/tv/nativeapp/ext"
-          cat > "$PKG/StreamPrefInitProvider.kt" << 'KOTLIN_EOF'
-          package com.ultratv.tv.nativeapp.ext
-          import android.content.ContentProvider
-          import android.content.ContentValues
-          import android.database.Cursor
-          import android.net.Uri
-          class StreamPrefInitProvider : ContentProvider() {
-              override fun onCreate(): Boolean { context?.let { StreamPref.init(it) }; return true }
-              override fun query(u: Uri, p: Array<out String>?, s: String?, sa: Array<out String>?, so: String?): Cursor? = null
-              override fun getType(u: Uri): String? = null
-              override fun insert(u: Uri, v: ContentValues?): Uri? = null
-              override fun delete(u: Uri, s: String?, sa: Array<out String>?): Int = 0
-              override fun update(u: Uri, v: ContentValues?, s: String?, sa: Array<out String>?): Int = 0
-          }
-          KOTLIN_EOF
-          echo "Provider created"
-          - name: Create StreamSettingsActivity
+- name: Create StreamSettingsActivity
   working-directory: source/android-native
   run: |
     PKG="app/src/main/kotlin/com/ultratv/tv/nativeapp/ext"
@@ -252,12 +239,7 @@ jobs:
                 setPadding(0, 30, 0, 40)
             })
             val current = StreamPref.getExt()
-            val options = listOf(
-                "m3u8" to "m3u8  (موصى به)",
-                "ts" to "ts  (تقليدي)",
-                "m3u" to "m3u",
-                "" to "بدون امتداد"
-            )
+            val options = listOf("m3u8" to "m3u8 (موصى به)", "ts" to "ts (تقليدي)", "m3u" to "m3u", "" to "بدون امتداد")
             for ((value, label) in options) {
                 val isCurrent = (value == current)
                 layout.addView(Button(this).apply {
@@ -267,10 +249,7 @@ jobs:
                     setBackgroundColor(if (isCurrent) Color.parseColor("#FF3A2F") else Color.parseColor("#1A1D23"))
                     setPadding(40, 30, 40, 30)
                     setOnClickListener { StreamPref.setExt(value); buildUi() }
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply { topMargin = 15 }
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = 15 }
                 })
             }
             layout.addView(TextView(this).apply {
@@ -287,10 +266,7 @@ jobs:
                 setBackgroundColor(Color.parseColor("#27AE60"))
                 setPadding(40, 40, 40, 40)
                 setOnClickListener { openMainApp() }
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { topMargin = 50 }
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = 50 }
             })
             layout.addView(TextView(this).apply {
                 text = "للعودة إلى هذه الشاشة، اضغط زر MENU على ريموت التلفاز"
@@ -301,11 +277,7 @@ jobs:
             })
         }
         private fun openMainApp() {
-            val candidates = listOf(
-                "com.ultratv.tv.nativeapp.MainActivity",
-                "com.ultratv.tv.nativeapp.MainActivityPetrol",
-                "com.ultratv.tv.nativeapp.MainActivityCobalt"
-            )
+            val candidates = listOf("com.ultratv.tv.nativeapp.MainActivity", "com.ultratv.tv.nativeapp.MainActivityPetrol", "com.ultratv.tv.nativeapp.MainActivityCobalt")
             for (cls in candidates) {
                 try {
                     val i = Intent()
@@ -324,68 +296,50 @@ jobs:
     KOTLIN_EOF
     echo "StreamSettingsActivity created"
 
-       - name: Patch MainActivity to open Settings on MENU key
+- name: Patch MainActivity MENU key
   working-directory: source/android-native
   run: |
     MAIN=$(find app/src/main/kotlin -name "MainActivity.kt" | head -1)
-    if [ -z "$MAIN" ]; then
-      echo "ERROR: MainActivity.kt not found"
-      find app/src/main/kotlin -name "Main*.kt"
-      exit 0
-    fi
+    [ -z "$MAIN" ] && echo "ERROR: not found" && exit 0
     echo "Found: $MAIN"
-    if ! grep -q "com.ultratv.tv.nativeapp.ext.StreamSettingsActivity" "$MAIN"; then
-      sed -i '0,/^import /s//import com.ultratv.tv.nativeapp.ext.StreamSettingsActivity\nimport /' "$MAIN"
-    fi
-    if ! grep -q "android.content.Intent" "$MAIN"; then
-      sed -i '0,/^import /s//import android.content.Intent\nimport /' "$MAIN"
-    fi
+    grep -q "com.ultratv.tv.nativeapp.ext.StreamSettingsActivity" "$MAIN" || sed -i '0,/^import /s//import com.ultratv.tv.nativeapp.ext.StreamSettingsActivity\nimport /' "$MAIN"
+    grep -q "android.content.Intent" "$MAIN" || sed -i '0,/^import /s//import android.content.Intent\nimport /' "$MAIN"
     if ! grep -q "onKeyDown" "$MAIN"; then
-      perl -i -pe 's|(override fun onCreate)|override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {\n        if (keyCode == android.view.KeyEvent.KEYCODE_MENU || keyCode == android.view.KeyEvent.KEYCODE_SETTINGS || keyCode == android.view.KeyEvent.KEYCODE_INFO || keyCode == android.view.KeyEvent.KEYCODE_PROG_RED) {\n            try {\n                val i = Intent(this, StreamSettingsActivity::class.java)\n                i.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)\n                startActivity(i)\n                return true\n            } catch (e: Exception) { }\n        }\n        return super.onKeyDown(keyCode, event)\n    }\n\n    $1|' "$MAIN"
+      perl -i -pe 's|(override fun onCreate)|override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {\n        if (keyCode == android.view.KeyEvent.KEYCODE_MENU || keyCode == android.view.KeyEvent.KEYCODE_SETTINGS || keyCode == android.view.KeyEvent.KEYCODE_INFO || keyCode == android.view.KeyEvent.KEYCODE_PROG_RED) {\n            try { val i = Intent(this, StreamSettingsActivity::class.java); i.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT); startActivity(i); return true } catch (e: Exception) { }\n        }\n        return super.onKeyDown(keyCode, event)\n    }\n    $1|' "$MAIN"
     fi
-    echo "=== After patch ==="
-    grep -n "onKeyDown\|StreamSettingsActivity\|Intent" "$MAIN" | head -10
+    grep -n "onKeyDown\|StreamSettingsActivity" "$MAIN" | head -5
 
-       - name: Configure Manifest (Settings as launcher, Main as normal)
+- name: Configure Manifest
   working-directory: source/android-native
   run: |
     MANIFEST="app/src/main/AndroidManifest.xml"
     if ! grep -q "StreamSettingsActivity" "$MANIFEST"; then
-      perl -i -pe 's|(</application>)|    <provider\n        android:name="com.ultratv.tv.nativeapp.ext.StreamPrefInitProvider"\n        android:authorities="com.ultratv.tv.nativeapp.streampref"\n        android:exported="false" />\n    <activity\n        android:name="com.ultratv.tv.nativeapp.ext.StreamSettingsActivity"\n        android:exported="true"\n        android:label="STTITEN IP TV"\n        android:icon="@drawable/sttiten_icon">\n        <intent-filter>\n            <action android:name="android.intent.action.MAIN" />\n            <category android:name="android.intent.category.LEANBACK_LAUNCHER" />\n            <category android:name="android.intent.category.LAUNCHER" />\n        </intent-filter>\n    </activity>\n$1|' "$MANIFEST"
+      perl -i -pe 's|(</application>)|    <provider android:name="com.ultratv.tv.nativeapp.ext.StreamPrefInitProvider" android:authorities="com.ultratv.tv.nativeapp.streampref" android:exported="false" />\n    <activity android:name="com.ultratv.tv.nativeapp.ext.StreamSettingsActivity" android:exported="true" android:label="STTITEN IP TV" android:icon="@drawable/sttiten_icon">\n        <intent-filter>\n            <action android:name="android.intent.action.MAIN" />\n            <category android:name="android.intent.category.LEANBACK_LAUNCHER" />\n            <category android:name="android.intent.category.LAUNCHER" />\n        </intent-filter>\n    </activity>\n$1|' "$MANIFEST"
     fi
     perl -0777 -i -pe 's|(<activity[^>]*android:name="com\.ultratv\.tv\.nativeapp\.MainActivity"[^>]*>)(.*?)<intent-filter>.*?</intent-filter>|$1$2|gs' "$MANIFEST"
     perl -0777 -i -pe 's|(<activity[^>]*android:name="com\.ultratv\.tv\.nativeapp\.MainActivityPetrol"[^>]*>)(.*?)<intent-filter>.*?</intent-filter>|$1$2|gs' "$MANIFEST"
     perl -0777 -i -pe 's|(<activity[^>]*android:name="com\.ultratv\.tv\.nativeapp\.MainActivityCobalt"[^>]*>)(.*?)<intent-filter>.*?</intent-filter>|$1$2|gs' "$MANIFEST"
-    echo "=== Verify ==="
+    echo "LAUNCHER count:"
     grep -c "LAUNCHER" "$MANIFEST"
-    grep -B 1 -A 3 "StreamSettingsActivity" "$MANIFEST" | head -12
 
-       - name: Patch XtreamClient
+- name: Patch XtreamClient
   working-directory: source/android-native
   run: |
     XT="app/src/main/kotlin/com/ultratv/tv/nativeapp/data/xtream/XtreamClient.kt"
-    if [ ! -f "$XT" ]; then
-      echo "ERROR: XtreamClient not found"
-      exit 1
-    fi
+    [ ! -f "$XT" ] && echo "ERROR: not found" && exit 1
     sed -i 's|pathPrefix(p, "live")}\$sid\.ts"|pathPrefix(p, "live")}$sid${com.ultratv.tv.nativeapp.ext.StreamPref.getSuffix()}"|g' "$XT"
-    echo "=== Verify ==="
     grep -n "StreamPref.getSuffix" "$XT" || echo "FAILED"
 
-    - name: Configure universal APK
+- name: Configure universal APK
   working-directory: source/android-native
   run: |
     A="app/build.gradle.kts"
     if [ -f "$A" ]; then
-      if ! grep -q 'abiFilters' "$A"; then
-        perl -i -pe 's/(defaultConfig\s*\{)/$1\n        ndk {\n            abiFilters += listOf("arm64-v8a", "armeabi-v7a")\n        }/' "$A"
-      fi
-      if ! grep -q 'useLegacyPackaging' "$A"; then
-        perl -i -pe 's/(android\s*\{)/$1\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' "$A"
-      fi
+      grep -q 'abiFilters' "$A" || perl -i -pe 's/(defaultConfig\s*\{)/$1\n        ndk {\n            abiFilters += listOf("arm64-v8a", "armeabi-v7a")\n        }/' "$A"
+      grep -q 'useLegacyPackaging' "$A" || perl -i -pe 's/(android\s*\{)/$1\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' "$A"
     fi
 
-    - name: Setup Gradle properties
+- name: Setup Gradle properties
   working-directory: source/android-native
   run: |
     echo "org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8" >> gradle.properties
@@ -395,11 +349,18 @@ jobs:
     echo "android.useAndroidX=true" >> gradle.properties
     echo "kotlin.code.style=official" >> gradle.properties
 
-     - name: Grant execute permission
+- name: Grant execute permission
   working-directory: source/android-native
-  run: chmod +x gradlew- name: Build APK
-working-directory: source/android-native 
-run:./gradlew assembleDebug --stacktrace --no-daemon --no-parallel- name:Upload APK uses:actions/upload-artifact@v4 with:
-          name: STTITEN-IP-TV-Final
-          path: source/android-native/**/*.apk
-          if-no-files-found: error
+  run: chmod +x gradlew
+
+- name: Build APK
+  working-directory: source/android-native
+  run: ./gradlew assembleDebug --stacktrace --no-daemon --no-parallel
+
+- name: Upload APK
+  uses: actions/upload-artifact@v4
+  with:
+    name: STTITEN-IP-TV-Final
+    path: 'source/android-native/**/*.apk'
+    if-no-files-found: error
+    
