@@ -83,273 +83,217 @@ jobs:
             sed -i 's|"UltraTV"|"STTITEN IP TV"|g' "$f"
             sed -i 's|"UTV"|"STTITEN IP TV"|g' "$f"
           done
-          echo "done"- name: Generate STTITEN icons for ALL folders
-  working-directory: source/android-native
-  run: |
-    RES="app/src/main/res"
-    mkdir -p "$RES/drawable-nodpi"
-    convert -size 1200x400 xc:transparent -font DejaVu-Sans-Bold -pointsize 110 -fill "#FFFFFF" -gravity center -annotate +0+0 "STTITEN IP TV" "$RES/drawable-nodpi/sttiten_logo.png"
-    convert -size 512x512 xc:"#0E1116" -font DejaVu-Sans-Bold -pointsize 90 -fill "#FF3A2F" -gravity center -annotate +0-60 "STTITEN" -pointsize 55 -fill "#FFFFFF" -annotate +0+60 "IP TV" "$RES/drawable-nodpi/sttiten_icon.png"
-    for D in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
-      N="${D%%:*}"; S="${D##*:}"
-      convert -size ${S}x${S} xc:"#0E1116" -font DejaVu-Sans-Bold -pointsize $((S*18/100)) -fill "#FF3A2F" -gravity center -annotate +0-$((S*8/100)) "STT" -pointsize $((S*12/100)) -fill "#FFFFFF" -annotate +0+$((S*10/100)) "IP TV" "/tmp/icon_${S}.png"
-      M="$RES/mipmap-$N"
-      mkdir -p "$M"
-      cp "/tmp/icon_${S}.png" "$M/ic_launcher.png"
-      cp "/tmp/icon_${S}.png" "$M/ic_launcher_round.png"
-      cp "/tmp/icon_${S}.png" "$M/ic_launcher_foreground.png"
-      for DIR in "$RES/drawable-port-$N" "$RES/drawable-land-$N"; do
-        mkdir -p "$DIR"
-        find "$DIR" -name "*.png" 2>/dev/null | while read P; do cp "/tmp/icon_${S}.png" "$P"; done
-      done
-    done
-    find "$RES" -name "*.png" \( -path "*/mipmap-*" -o -path "*/drawable-port-*" -o -path "*/drawable-land-*" \) 2>/dev/null | while read P; do
-      D=$(basename $(dirname "$P"))
-      case "$D" in *mdpi) S=48 ;; *hdpi) S=72 ;; *xhdpi) S=96 ;; *xxhdpi) S=144 ;; *xxxhdpi) S=192 ;; *) S=96 ;; esac
-      cp "/tmp/icon_${S}.png" "$P"
-    done
-    echo "All icons generated"
-    - name: Replace XML logos in drawable folders
-  working-directory: source/android-native
-  run: |
-    for DIR in app/src/main/res/drawable*; do
-      case "$DIR" in *nodpi*) continue ;; esac
-      [ -d "$DIR" ] || continue
-      for F in "$DIR"/*.xml; do
-        [ -f "$F" ] || continue
-        BN=$(basename "$F")
-        case "$BN" in
-          ic_opensubtitles_logo.xml|ic_tmdb_logo.xml) continue ;;
-          *background*|*_bg*) continue ;;
-        esac
-        if grep -qE "<vector|<shape|<layer-list" "$F" 2>/dev/null; then
-          if echo "$BN" | grep -qiE "launcher|icon"; then IMG="sttiten_icon"; else IMG="sttiten_logo"; fi
-          printf '<?xml version="1.0" encoding="utf-8"?>\n<bitmap xmlns:android="http://schemas.android.com/apk/res/android" android:src="@drawable/%s" android:gravity="center" />\n' "$IMG" > "$F"
-        fi
-      done
-    done
-    if [ -d "app/src/main/res/mipmap-anydpi-v26" ]; then
-      for F in app/src/main/res/mipmap-anydpi-v26/*.xml; do
-        [ -f "$F" ] || continue
-        [ "$(basename $F)" = "ic_launcher_round.xml" ] && continue
-        printf '<?xml version="1.0" encoding="utf-8"?>\n<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n  <background android:drawable="@color/sttiten_background" />\n  <foreground android:drawable="@drawable/sttiten_icon" />\n</adaptive-icon>\n' > "$F"
-      done
-    fi
-    echo "XML replaced"
-    - name: Add color resource
-  working-directory: source/android-native
-  run: |
-    C="app/src/main/res/values/colors.xml"
-    [ -f "$C" ] || printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n</resources>\n' > "$C"
-    grep -q "sttiten_background" "$C" || sed -i 's|</resources>|    <color name="sttiten_background">#0E1116</color>\n</resources>|' "$C"
-    echo "color added"- name: Create StreamPref
-  working-directory: source/android-native
-  run: |
-    PKG="app/src/main/kotlin/com/ultratv/tv/nativeapp/ext"
-    mkdir -p "$PKG"
-    cat > "$PKG/StreamPref.kt" << 'KOTLIN_EOF'
-    package com.ultratv.tv.nativeapp.ext
-    import android.content.Context
-    object StreamPref {
-        private const val PREFS = "sttiten_ext"
-        private const val KEY = "stream_ext"
-        private const val DEFAULT = "m3u8"
-        @Volatile private var appCtx: Context? = null
-        @Volatile private var cached: String? = null
-        fun init(context: Context) { if (appCtx == null) appCtx = context.applicationContext }
-        fun getExt(): String {
-            cached?.let { return it }
-            val c = appCtx ?: return DEFAULT
-            val v = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, DEFAULT) ?: DEFAULT
-            cached = v
-            return v
-        }
-        fun getSuffix(): String = if (getExt().isEmpty()) "" else "." + getExt()
-        fun setExt(ext: String) {
-            cached = ext
-            appCtx?.getSharedPreferences(PREFS, Context.MODE_PRIVATE)?.edit()?.putString(KEY, ext)?.apply()
-        }
-    }
-    KOTLIN_EOF
-    cat > "$PKG/StreamPrefInitProvider.kt" << 'KOTLIN_EOF'
-    package com.ultratv.tv.nativeapp.ext
-    import android.content.ContentProvider
-    import android.content.ContentValues
-    import android.database.Cursor
-    import android.net.Uri
-    class StreamPrefInitProvider : ContentProvider() {
-        override fun onCreate(): Boolean { context?.let { StreamPref.init(it) }; return true }
-        override fun query(u: Uri, p: Array<out String>?, s: String?, sa: Array<out String>?, so: String?): Cursor? = null
-        override fun getType(u: Uri): String? = null
-        override fun insert(u: Uri, v: ContentValues?): Uri? = null
-        override fun delete(u: Uri, s: String?, sa: Array<out String>?): Int = 0
-        override fun update(u: Uri, v: ContentValues?, s: String?, sa: Array<out String>?): Int = 0
-    }
-    KOTLIN_EOF
-    echo "helpers created"
-    - name: Create StreamSettingsActivity
-  working-directory: source/android-native
-  run: |
-    PKG="app/src/main/kotlin/com/ultratv/tv/nativeapp/ext"
-    cat > "$PKG/StreamSettingsActivity.kt" << 'KOTLIN_EOF'
-    package com.ultratv.tv.nativeapp.ext
-    import android.app.Activity
-    import android.content.Intent
-    import android.graphics.Color
-    import android.os.Bundle
-    import android.util.TypedValue
-    import android.view.Gravity
-    import android.widget.Button
-    import android.widget.LinearLayout
-    import android.widget.ScrollView
-    import android.widget.TextView
-    class StreamSettingsActivity : Activity() {
-        private lateinit var layout: LinearLayout
-        override fun onCreate(savedInstanceState: Bundle?) {
-            super.onCreate(savedInstanceState)
-            StreamPref.init(this)
-            val scroll = ScrollView(this).apply { setBackgroundColor(Color.parseColor("#0E1116")) }
-            layout = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER_HORIZONTAL
-                setPadding(60, 60, 60, 60)
-            }
-            scroll.addView(layout)
-            setContentView(scroll)
-            buildUi()
-        }
-        private fun buildUi() {
-            layout.removeAllViews()
-            layout.addView(TextView(this).apply {
-                text = "STTITEN IP TV"
-                setTextColor(Color.parseColor("#FF3A2F"))
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 42f)
-                gravity = Gravity.CENTER
-            })
-            layout.addView(TextView(this).apply {
-                text = "اختر امتداد البث المباشر"
-                setTextColor(Color.WHITE)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
-                gravity = Gravity.CENTER
-                setPadding(0, 30, 0, 40)
-            })
-            val current = StreamPref.getExt()
-            val options = listOf("m3u8" to "m3u8 (موصى به)", "ts" to "ts (تقليدي)", "m3u" to "m3u", "" to "بدون امتداد")
-            for ((value, label) in options) {
-                val isCurrent = (value == current)
-                layout.addView(Button(this).apply {
-                    text = if (isCurrent) "✓  $label" else label
-                    setTextColor(Color.WHITE)
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-                    setBackgroundColor(if (isCurrent) Color.parseColor("#FF3A2F") else Color.parseColor("#1A1D23"))
-                    setPadding(40, 30, 40, 30)
-                    setOnClickListener { StreamPref.setExt(value); buildUi() }
-                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = 15 }
-                })
-            }
-            layout.addView(TextView(this).apply {
-                text = "الإعداد الحالي: $current"
-                setTextColor(Color.parseColor("#FF3A2F"))
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-                gravity = Gravity.CENTER
-                setPadding(0, 40, 0, 0)
-            })
-            layout.addView(Button(this).apply {
-                text = "▶  ابدأ المشاهدة"
-                setTextColor(Color.WHITE)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
-                setBackgroundColor(Color.parseColor("#27AE60"))
-                setPadding(40, 40, 40, 40)
-                setOnClickListener { openMainApp() }
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = 50 }
-            })
-            layout.addView(TextView(this).apply {
-                text = "للعودة إلى هذه الشاشة، اضغط زر MENU على ريموت التلفاز"
-                setTextColor(Color.parseColor("#888888"))
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-                gravity = Gravity.CENTER
-                setPadding(0, 40, 0, 0)
-            })
-        }
-        private fun openMainApp() {
-            val candidates = listOf("com.ultratv.tv.nativeapp.MainActivity", "com.ultratv.tv.nativeapp.MainActivityPetrol", "com.ultratv.tv.nativeapp.MainActivityCobalt")
-            for (cls in candidates) {
-                try {
-                    val i = Intent()
-                    i.setClassName(packageName, cls)
-                    i.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-                    startActivity(i)
-                    return
-                } catch (e: Exception) { }
-            }
-            packageManager.getLaunchIntentForPackage(packageName)?.let {
-                it.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-                if (it.component?.className != this::class.java.name) startActivity(it)
-            }
-        }
-    }
-    KOTLIN_EOF
-    echo "StreamSettingsActivity created"
-    
-     - name: Patch MainActivity MENU key
-     working-directory: source/android-native
-  run: |
-    MAIN=$(find app/src/main/kotlin -name "MainActivity.kt" | head -1)
-    [ -z "$MAIN" ] && echo "ERROR: not found" && exit 0
-    echo "Found: $MAIN"
-    grep -q "com.ultratv.tv.nativeapp.ext.StreamSettingsActivity" "$MAIN" || sed -i '0,/^import /s//import com.ultratv.tv.nativeapp.ext.StreamSettingsActivity\nimport /' "$MAIN"
-    grep -q "android.content.Intent" "$MAIN" || sed -i '0,/^import /s//import android.content.Intent\nimport /' "$MAIN"
-    if ! grep -q "onKeyDown" "$MAIN"; then
-      perl -i -pe 's|(override fun onCreate)|override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {\n        if (keyCode == android.view.KeyEvent.KEYCODE_MENU || keyCode == android.view.KeyEvent.KEYCODE_SETTINGS || keyCode == android.view.KeyEvent.KEYCODE_INFO || keyCode == android.view.KeyEvent.KEYCODE_PROG_RED) {\n            try { val i = Intent(this, StreamSettingsActivity::class.java); i.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT); startActivity(i); return true } catch (e: Exception) { }\n        }\n        return super.onKeyDown(keyCode, event)\n    }\n    $1|' "$MAIN"
-    fi
-    grep -n "onKeyDown\|StreamSettingsActivity" "$MAIN" | head -5
-    
-    - name: Configure Manifest
-    working-directory: source/android-native
-  run: |
-    MANIFEST="app/src/main/AndroidManifest.xml"
-    if ! grep -q "StreamSettingsActivity" "$MANIFEST"; then
-      perl -i -pe 's|(</application>)|    <provider android:name="com.ultratv.tv.nativeapp.ext.StreamPrefInitProvider" android:authorities="com.ultratv.tv.nativeapp.streampref" android:exported="false" />\n    <activity android:name="com.ultratv.tv.nativeapp.ext.StreamSettingsActivity" android:exported="true" android:label="STTITEN IP TV" android:icon="@drawable/sttiten_icon">\n        <intent-filter>\n            <action android:name="android.intent.action.MAIN" />\n            <category android:name="android.intent.category.LEANBACK_LAUNCHER" />\n            <category android:name="android.intent.category.LAUNCHER" />\n        </intent-filter>\n    </activity>\n$1|' "$MANIFEST"
-    fi
-    perl -0777 -i -pe 's|(<activity[^>]*android:name="com\.ultratv\.tv\.nativeapp\.MainActivity"[^>]*>)(.*?)<intent-filter>.*?</intent-filter>|$1$2|gs' "$MANIFEST"
-    perl -0777 -i -pe 's|(<activity[^>]*android:name="com\.ultratv\.tv\.nativeapp\.MainActivityPetrol"[^>]*>)(.*?)<intent-filter>.*?</intent-filter>|$1$2|gs' "$MANIFEST"
-    perl -0777 -i -pe 's|(<activity[^>]*android:name="com\.ultratv\.tv\.nativeapp\.MainActivityCobalt"[^>]*>)(.*?)<intent-filter>.*?</intent-filter>|$1$2|gs' "$MANIFEST"
-    echo "LAUNCHER count:"
-    grep -c "LAUNCHER" "$MANIFEST"
+          echo "done"
 
-    - name: Patch XtreamClient
-    working-directory: source/android-native
-  run: |
-    XT="app/src/main/kotlin/com/ultratv/tv/nativeapp/data/xtream/XtreamClient.kt"
-    [ ! -f "$XT" ] && echo "ERROR: not found" && exit 1
-    sed -i 's|pathPrefix(p, "live")}\$sid\.ts"|pathPrefix(p, "live")}$sid${com.ultratv.tv.nativeapp.ext.StreamPref.getSuffix()}"|g' "$XT"
-    grep -n "StreamPref.getSuffix" "$XT" || echo "FAILED"
+      - name: Generate STTITEN icons for ALL folders
+        working-directory: source/android-native
+        run: |
+          RES="app/src/main/res"
+          mkdir -p "$RES/drawable-nodpi"
+          convert -size 1200x400 xc:transparent -font DejaVu-Sans-Bold -pointsize 110 -fill "#FFFFFF" -gravity center -annotate +0+0 "STTITEN IP TV" "$RES/drawable-nodpi/sttiten_logo.png"
+          convert -size 512x512 xc:"#0E1116" -font DejaVu-Sans-Bold -pointsize 90 -fill "#FF3A2F" -gravity center -annotate +0-60 "STTITEN" -pointsize 55 -fill "#FFFFFF" -annotate +0+60 "IP TV" "$RES/drawable-nodpi/sttiten_icon.png"
+          for D in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+            N="${D%%:*}"; S="${D##*:}"
+            convert -size ${S}x${S} xc:"#0E1116" -font DejaVu-Sans-Bold -pointsize $((S*18/100)) -fill "#FF3A2F" -gravity center -annotate +0-$((S*8/100)) "STT" -pointsize $((S*12/100)) -fill "#FFFFFF" -annotate +0+$((S*10/100)) "IP TV" "/tmp/icon_${S}.png"
+            M="$RES/mipmap-$N"
+            mkdir -p "$M"
+            cp "/tmp/icon_${S}.png" "$M/ic_launcher.png"
+            cp "/tmp/icon_${S}.png" "$M/ic_launcher_round.png"
+            cp "/tmp/icon_${S}.png" "$M/ic_launcher_foreground.png"
+            for DIR in "$RES/drawable-port-$N" "$RES/drawable-land-$N"; do
+              mkdir -p "$DIR"
+              find "$DIR" -name "*.png" 2>/dev/null | while read P; do cp "/tmp/icon_${S}.png" "$P"; done
+            done
+          done
+          find "$RES" -name "*.png" \( -path "*/mipmap-*" -o -path "*/drawable-port-*" -o -path "*/drawable-land-*" \) 2>/dev/null | while read P; do
+            D=$(basename $(dirname "$P"))
+            case "$D" in *mdpi) S=48 ;; *hdpi) S=72 ;; *xhdpi) S=96 ;; *xxhdpi) S=144 ;; *xxxhdpi) S=192 ;; *) S=96 ;; esac
+            cp "/tmp/icon_${S}.png" "$P"
+          done
+          echo "All icons generated"
 
-    - name: Configure universal APK
-      working-directory: source/android-native
-  run: |
-    A="app/build.gradle.kts"
-    if [ -f "$A" ]; then
-      grep -q 'abiFilters' "$A" || perl -i -pe 's/(defaultConfig\s*\{)/$1\n        ndk {\n            abiFilters += listOf("arm64-v8a", "armeabi-v7a")\n        }/' "$A"
-      grep -q 'useLegacyPackaging' "$A" || perl -i -pe 's/(android\s*\{)/$1\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' "$A"
-    fi
+      - name: Replace XML logos in drawable folders
+        working-directory: source/android-native
+        run: |
+          for DIR in app/src/main/res/drawable*; do
+            case "$DIR" in *nodpi*) continue ;; esac
+            [ -d "$DIR" ] || continue
+            for F in "$DIR"/*.xml; do
+              [ -f "$F" ] || continue
+              BN=$(basename "$F")
+              case "$BN" in
+                ic_opensubtitles_logo.xml|ic_tmdb_logo.xml) continue ;;
+                *background*|*_bg*) continue ;;
+              esac
+              if grep -qE "<vector|<shape|<layer-list" "$F" 2>/dev/null; then
+                if echo "$BN" | grep -qiE "launcher|icon"; then IMG="sttiten_icon"; else IMG="sttiten_logo"; fi
+                printf '<?xml version="1.0" encoding="utf-8"?>\n<bitmap xmlns:android="http://schemas.android.com/apk/res/android" android:src="@drawable/%s" android:gravity="center" />\n' "$IMG" > "$F"
+              fi
+            done
+          done
+          if [ -d "app/src/main/res/mipmap-anydpi-v26" ]; then
+            for F in app/src/main/res/mipmap-anydpi-v26/*.xml; do
+              [ -f "$F" ] || continue
+              [ "$(basename $F)" = "ic_launcher_round.xml" ] && continue
+              printf '<?xml version="1.0" encoding="utf-8"?>\n<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n  <background android:drawable="@color/sttiten_background" />\n  <foreground android:drawable="@drawable/sttiten_icon" />\n</adaptive-icon>\n' > "$F"
+            done
+          fi
+          echo "XML replaced"
 
-    - name: Setup Gradle properties
-      working-directory: source/android-native
-  run: |
-    echo "org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8" >> gradle.properties
-    echo "org.gradle.daemon=false" >> gradle.properties
-    echo "org.gradle.parallel=false" >> gradle.properties
-    echo "org.gradle.caching=true" >> gradle.properties
-    echo "android.useAndroidX=true" >> gradle.properties
-    echo "kotlin.code.style=official" >> gradle.properties
+      - name: Add color resource
+        working-directory: source/android-native
+        run: |
+          C="app/src/main/res/values/colors.xml"
+          [ -f "$C" ] || printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n</resources>\n' > "$C"
+          grep -q "sttiten_background" "$C" || sed -i 's|</resources>|    <color name="sttiten_background">#0E1116</color>\n</resources>|' "$C"
+          echo "color added"
 
-    - name: Grant execute permission
-    working-directory: source/android-native
-    run: chmod +x gradlew- name: Build APK
-  working-directory:source/android-nativerun: ./gradlew assembleDebug --stacktrace --no-daemon --no-parallel- name: Upload APK
-  uses: actions/upload-artifact@v4
-  with:
-    name: STTITEN-IP-TV-Final
-    path: 'source/android-native/**/*.apk'
-    if-no-files-found: error
+      - name: Create StreamPref
+        working-directory: source/android-native
+        run: |
+          PKG="app/src/main/kotlin/com/ultratv/tv/nativeapp/ext"
+          mkdir -p "$PKG"
+          cat > "$PKG/StreamPref.kt" << 'KOTLIN_EOF'
+          package com.ultratv.tv.nativeapp.ext
+          import android.content.Context
+          object StreamPref {
+              private const val PREFS = "sttiten_ext"
+              private const val KEY = "stream_ext"
+              private const val DEFAULT = "m3u8"
+              @Volatile private var appCtx: Context? = null
+              @Volatile private var cached: String? = null
+              fun init(context: Context) { if (appCtx == null) appCtx = context.applicationContext }
+              fun getExt(): String {
+                  cached?.let { return it }
+                  val c = appCtx ?: return DEFAULT
+                  val v = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, DEFAULT) ?: DEFAULT
+                  cached = v
+                  return v
+              }
+              fun getSuffix(): String = if (getExt().isEmpty()) "" else "." + getExt()
+              fun setExt(ext: String) {
+                  cached = ext
+                  appCtx?.getSharedPreferences(PREFS, Context.MODE_PRIVATE)?.edit()?.putString(KEY, ext)?.apply()
+              }
+          }
+          KOTLIN_EOF
+          cat > "$PKG/StreamPrefInitProvider.kt" << 'KOTLIN_EOF'
+          package com.ultratv.tv.nativeapp.ext
+          import android.content.ContentProvider
+          import android.content.ContentValues
+          import android.database.Cursor
+          import android.net.Uri
+          class StreamPrefInitProvider : ContentProvider() {
+              override fun onCreate(): Boolean { context?.let { StreamPref.init(it) }; return true }
+              override fun query(u: Uri, p: Array<out String>?, s: String?, sa: Array<out String>?, so: String?): Cursor? = null
+              override fun getType(u: Uri): String? = null
+              override fun insert(u: Uri, v: ContentValues?): Uri? = null
+              override fun delete(u: Uri, s: String?, sa: Array<out String>?): Int = 0
+              override fun update(u: Uri, v: ContentValues?, s: String?, sa: Array<out String>?): Int = 0
+          }
+          KOTLIN_EOF
+          echo "helpers created"
+
+      - name: Create StreamSettingsActivity
+        working-directory: source/android-native
+        run: |
+          PKG="app/src/main/kotlin/com/ultratv/tv/nativeapp/ext"
+          cat > "$PKG/StreamSettingsActivity.kt" << 'KOTLIN_EOF'
+          package com.ultratv.tv.nativeapp.ext
+          import android.app.Activity
+          import android.content.Intent
+          import android.graphics.Color
+          import android.os.Bundle
+          import android.util.TypedValue
+          import android.view.Gravity
+          import android.widget.Button
+          import android.widget.LinearLayout
+          import android.widget.ScrollView
+          import android.widget.TextView
+          class StreamSettingsActivity : Activity() {
+              private lateinit var layout: LinearLayout
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  StreamPref.init(this)
+                  val scroll = ScrollView(this).apply { setBackgroundColor(Color.parseColor("#0E1116")) }
+                  layout = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      gravity = Gravity.CENTER_HORIZONTAL
+                      setPadding(60, 60, 60, 60)
+                  }
+                  scroll.addView(layout)
+                  setContentView(scroll)
+                  buildUi()
+              }
+              private fun buildUi() {
+                  layout.removeAllViews()
+                  layout.addView(TextView(this).apply {
+                      text = "STTITEN IP TV"
+                      setTextColor(Color.parseColor("#FF3A2F"))
+                      setTextSize(TypedValue.COMPLEX_UNIT_SP, 42f)
+                      gravity = Gravity.CENTER
+                  })
+                  layout.addView(TextView(this).apply {
+                      text = "اختر امتداد البث المباشر"
+                      setTextColor(Color.WHITE)
+                      setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
+                      gravity = Gravity.CENTER
+                      setPadding(0, 30, 0, 40)
+                  })
+                  val current = StreamPref.getExt()
+                  val options = listOf("m3u8" to "m3u8 (موصى به)", "ts" to "ts (تقليدي)", "m3u" to "m3u", "" to "بدون امتداد")
+                  for ((value, label) in options) {
+                      val isCurrent = (value == current)
+                      layout.addView(Button(this).apply {
+                          text = if (isCurrent) "✓  $label" else label
+                          setTextColor(Color.WHITE)
+                          setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+                          setBackgroundColor(if (isCurrent) Color.parseColor("#FF3A2F") else Color.parseColor("#1A1D23"))
+                          setPadding(40, 30, 40, 30)
+                          setOnClickListener { StreamPref.setExt(value); buildUi() }
+                          layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = 15 }
+                      })
+                  }
+                  layout.addView(TextView(this).apply {
+                      text = "الإعداد الحالي: $current"
+                      setTextColor(Color.parseColor("#FF3A2F"))
+                      setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+                      gravity = Gravity.CENTER
+                      setPadding(0, 40, 0, 0)
+                  })
+                  layout.addView(Button(this).apply {
+                      text = "▶  ابدأ المشاهدة"
+                      setTextColor(Color.WHITE)
+                      setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
+                      setBackgroundColor(Color.parseColor("#27AE60"))
+                      setPadding(40, 40, 40, 40)
+                      setOnClickListener { openMainApp() }
+                      layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = 50 }
+                  })
+                  layout.addView(TextView(this).apply {
+                      text = "للعودة إلى هذه الشاشة، اضغط زر MENU على ريموت التلفاز"
+                      setTextColor(Color.parseColor("#888888"))
+                      setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                      gravity = Gravity.CENTER
+                      setPadding(0, 40, 0, 0)
+                  })
+              }
+              private fun openMainApp() {
+                  val candidates = listOf("com.ultratv.tv.nativeapp.MainActivity", "com.ultratv.tv.nativeapp.MainActivityPetrol", "com.ultratv.tv.nativeapp.MainActivityCobalt")
+                  for (cls in candidates) {
+                      try {
+                          val i = Intent()
+                          i.setClassName(packageName, cls)
+                          i.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                          startActivity(i)
+                          return
+                      } catch (e: Exception) { }
+                  }
+                  packageManager.getLaunchIntentForPackage(packageName)?.let {
+                      it.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                      if (it.component?.className != this::class.java.name) startActivity(it)
+                  }
+              }
+          }
+          KOTLIN_EOF
+          echo "StreamSettingsActivity created"
