@@ -297,8 +297,7 @@ jobs:
           }
           KOTLIN_EOF
           echo "StreamSettingsActivity created" 
-
-- name: Patch MainActivity MENU key
+          - name: Patch MainActivity MENU key
   working-directory: source/android-native
   run: |
     MAIN=$(find app/src/main/kotlin -name "MainActivity.kt" | head -1)
@@ -338,8 +337,7 @@ jobs:
     PY
     fi
     grep -n "onKeyDown\|StreamSettingsActivity" "$MAIN" | head -5
-
-- name: Configure Manifest
+    - name: Configure Manifest
   working-directory: source/android-native
   run: |
     MANIFEST="app/src/main/AndroidManifest.xml"
@@ -375,16 +373,14 @@ jobs:
     PY
     echo "LAUNCHER count:"
     grep -c "LAUNCHER" "$MANIFEST" || true
-
-- name: Patch XtreamClient
+    - name: Patch XtreamClient
   working-directory: source/android-native
   run: |
     XT="app/src/main/kotlin/com/ultratv/tv/nativeapp/data/xtream/XtreamClient.kt"
     [ ! -f "$XT" ] && echo "ERROR: not found" && exit 1
     sed -i 's|pathPrefix(p, "live")}\$sid\.ts"|pathPrefix(p, "live")}$sid${com.ultratv.tv.nativeapp.ext.StreamPref.getSuffix()}"|g' "$XT"
     grep -n "StreamPref.getSuffix" "$XT" || echo "FAILED"
-
-- name: Configure universal APK
+    - name: Configure universal APK
   working-directory: source/android-native
   run: |
     A="app/build.gradle.kts"
@@ -392,8 +388,7 @@ jobs:
       grep -q 'abiFilters' "$A" || perl -i -pe 's/(defaultConfig\s*\{)/$1\n        ndk {\n            abiFilters += listOf("arm64-v8a", "armeabi-v7a")\n        }/' "$A"
       grep -q 'useLegacyPackaging' "$A" || perl -i -pe 's/(android\s*\{)/$1\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }/' "$A"
     fi
-
-- name: Setup Gradle properties
+    - name: Setup Gradle properties
   working-directory: source/android-native
   run: |
     echo "org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8" >> gradle.properties
@@ -402,16 +397,11 @@ jobs:
     echo "org.gradle.caching=true" >> gradle.properties
     echo "android.useAndroidX=true" >> gradle.properties
     echo "kotlin.code.style=official" >> gradle.properties
-
-- name: Grant execute permission
+    - name: Grant execute permission
   working-directory: source/android-native
-  run: chmod +x gradlew
-
-- name: Build APK
+  run:chmod +x gradlew- name: Build APK
   working-directory: source/android-native
-  run: ./gradlew assembleDebug --stacktrace --no-daemon --no-parallel
-
-- name: Upload APK
+  run: ./gradlew assembleDebug --stacktrace --no-daemon --no-paralle- name: Upload APK
   uses: actions/upload-artifact@v4
   with:
     name: STTITEN-IP-TV-Final
