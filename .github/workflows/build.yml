@@ -84,7 +84,7 @@ jobs:
             sed -i 's|"UTV"|"STTITEN IP TV"|g' "$f"
           done
           echo "done"
-                - name: Generate STTITEN icons for ALL folders
+      - name: Generate STTITEN icons for ALL folders
   working-directory: source/android-native
   run: |
     RES="app/src/main/res"
@@ -106,7 +106,7 @@ jobs:
     done
     find "$RES" -name "*.png" \( -path "*/mipmap-*" -o -path "*/drawable-port-*" -o -path "*/drawable-land-*" \) 2>/dev/null | while read P; do
       D=$(basename $(dirname "$P"))
-      case "$D" in *mdpi) S=48 ;; *hdpi) S=72 ;; *xhdpi) S=96 ;; *xxhdpi) S=144 ;; *xxxhdpi) S=192 ;; *) S=96 ;; esac
+      case "$D" in *mdpi) S=48 ;; *hdpi) S=72 ;; *xhdpi) S=96 ;; *xxhdpi) S=144 ;; *xxxhdpi) S=192 ;; *) S=96 ;; esa
       cp "/tmp/icon_${S}.png" "$P"
     done
     echo "All icons generated"
