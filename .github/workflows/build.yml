@@ -346,9 +346,8 @@ jobs:
 
     - name: Grant execute permission
     working-directory: source/android-native
-  run: chmod +x gradlew- name: Build APK
-  working-directory: source/android-native
-  run: ./gradlew assembleDebug --stacktrace --no-daemon --no-parallel- name: Upload APK
+    run: chmod +x gradlew- name: Build APK
+  working-directory:source/android-nativerun: ./gradlew assembleDebug --stacktrace --no-daemon --no-parallel- name: Upload APK
   uses: actions/upload-artifact@v4
   with:
     name: STTITEN-IP-TV-Final
